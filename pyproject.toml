@@ -4,16 +4,19 @@ version = "0.1.0"
 description = "Local trading research workbench: multi-timeframe candle viewer with annotations"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.115",
     "numpy>=2.0",
     "pandas>=2.2",
     "pyarrow>=17",
+    "uvicorn>=0.30",
 ]
 
 [project.scripts]
 candle-data = "candle_viewer.market.cli:main"
+candle-viewer = "candle_viewer.app.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["httpx2", "pytest>=8"]
 
 [build-system]
 requires = ["hatchling"]

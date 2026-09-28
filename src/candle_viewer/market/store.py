@@ -21,6 +21,7 @@ from .rawdata import COLUMNS as RAW_COLUMNS
 from .rawdata import VOLUME, RawFile
 
 MANIFEST = "manifest.json"
+ROW_GROUP = 100_000   # bars per row group; the application reads windows of bars group by group
 
 
 def dataset_dir(workspace: Path, convention: str) -> Path:
@@ -43,7 +44,7 @@ def write_bars(dataset: Path, symbol: str, bars: dict[str, pd.DataFrame]) -> Non
     for name, frame in bars.items():
         target = bars_path(dataset, symbol, name)
         target.parent.mkdir(parents=True, exist_ok=True)
-        frame.to_parquet(target, compression="zstd", index=False)
+        frame.to_parquet(target, compression="zstd", index=False, row_group_size=ROW_GROUP)
         target = csv_path(dataset, symbol, name)
         target.parent.mkdir(parents=True, exist_ok=True)
         columns = [*RAW_COLUMNS, VOLUME] if frame[VOLUME].notna().any() else list(RAW_COLUMNS)

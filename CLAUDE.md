@@ -26,11 +26,16 @@ uv run pytest                # tests
 node tools/dukascopy/fetch.mjs --symbols eurusd --to 2026-09-26    # download m1 and d1, resumable
 uv run candle-data rebuild --source ~/candle_workspace/raw/dukascopy   # rebuild all timeframes
 uv run candle-data check                                               # verify a rebuilt dataset
+uv run candle-viewer                                                   # serve the application on http://127.0.0.1:8765
 node tools/dukascopy/repair.mjs --symbols eurusd                       # fill holes from ticks, then rebuild again
 ```
 
 ## Layout
 
+- `src/candle_viewer/app/` – the local web application (FastAPI)
+  - `bars.py` windows of bars read from the Parquet files by row group
+  - `studies.py` research records as plain files below `<workspace>/studies`
+  - `main.py` HTTP API under `/api`, serves the built frontend
 - `src/candle_viewer/market/` – market data pipeline
   - `timeframes.py` timeframe definitions
   - `sessions.py` session calendar: assigns instants to bars under a convention (`utc`, `nyclose`)
