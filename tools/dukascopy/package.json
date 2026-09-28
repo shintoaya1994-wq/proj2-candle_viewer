@@ -1,0 +1,9 @@
+{
+  "name": "candle-viewer-dukascopy-fetch",
+  "private": true,
+  "type": "module",
+  "description": "Downloads Dukascopy candles with dukascopy-node, resumable and in yearly chunks",
+  "dependencies": {
+    "dukascopy-node": "1.50.0"
+  }
+}

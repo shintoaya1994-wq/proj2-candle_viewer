@@ -1,0 +1,22 @@
+# Private market data and research records never go to GitHub
+data_for_test/
+workspace/
+*.sqlite
+*.sqlite-*
+*.db
+*.parquet
+
+# Dependencies and build output
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+.vite/
+
+# Local settings and secrets
+CLAUDE.local.md
+.env
+.env.*
+config.local.*
