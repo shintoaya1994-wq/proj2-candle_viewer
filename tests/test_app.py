@@ -147,17 +147,20 @@ class TestBars:
 def content(**changes):
     study = {
         "symbol": "testfx",
-        "timeframe": "h1",
         "focus": ms("2024-01-10 12:00"),
         "tag": "箱体·待突破",
         "comment": "第一段\n\n感觉这次上涨没有结束。",
         "drawings": [
-            {"id": "d1", "name": "segment", "timeframe": "h1", "points": [{"timestamp": ms("2024-01-09 03:00"), "value": 1.2012}, {"timestamp": ms("2024-01-10 08:00"), "value": 1.1987}], "styles": {"line": {"color": "#e11d48"}}},
-            {"id": "d2", "name": "box", "timeframe": "h1", "points": [{"timestamp": ms("2024-01-10 00:00"), "value": 1.2050}, {"timestamp": ms("2024-02-01 00:00"), "value": 1.1950}], "extendData": {"text": "延伸到未来"}},
+            {"id": "d1", "name": "segment", "symbol": "testfx", "timeframe": "h1", "points": [{"timestamp": ms("2024-01-09 03:00"), "value": 1.2012}, {"timestamp": ms("2024-01-10 08:00"), "value": 1.1987}], "styles": {"line": {"color": "#e11d48"}}},
+            {"id": "d2", "name": "box", "symbol": "testfx", "timeframe": "h1", "points": [{"timestamp": ms("2024-01-10 00:00"), "value": 1.2050}, {"timestamp": ms("2024-02-01 00:00"), "value": 1.1950}], "extendData": {"text": "延伸到未来"}},
             {"id": "d3", "name": "horizontalStraightLine", "points": [{"value": 1.2}]},
         ],
-        "indicators": [{"name": "MA", "pane": "candle", "params": [20, 60]}, {"name": "MACD", "pane": "macd", "params": [12, 26, 9]}],
-        "view": {"barSpace": 8.5, "offsetRight": 40, "rightTimestamp": ms("2024-01-11 00:00")},
+        "panes": [
+            {"symbol": "testfx", "timeframe": "h1", "indicators": [{"name": "MA", "pane": "candle", "params": [20, 60]}, {"name": "MACD", "pane": "own", "params": [12, 26, 9]}],
+             "view": {"barSpace": 8.5, "offsetRight": 40, "rightTimestamp": ms("2024-01-11 00:00")}},
+            {"symbol": "testfx", "timeframe": "d1"},
+        ],
+        "layout": {"columns": 2, "rows": 1},
     }
     study.update(changes)
     return study
@@ -176,12 +179,15 @@ class TestStudies:
         saved = created.json()
         reopened = client.get(f"/api/studies/{saved['id']}").json()
         assert reopened == saved
-        for key in ("symbol", "timeframe", "focus", "tag", "comment", "view"):
+        for key in ("symbol", "focus", "tag", "comment", "layout"):
             assert reopened[key] == content()[key], key
-        assert reopened["timezone"] == "UTC"
-        assert reopened["indicators"] == [
-            {"name": "MA", "pane": "candle", "params": [20, 60], "visible": True},
-            {"name": "MACD", "pane": "macd", "params": [12, 26, 9], "visible": True},
+        assert reopened["timezone"] == "UTC" and reopened["subject"] is None and reopened["schemaVersion"] == 2
+        assert reopened["panes"] == [
+            {"symbol": "testfx", "timeframe": "h1", "view": {"barSpace": 8.5, "offsetRight": 40, "rightTimestamp": ms("2024-01-11 00:00")}, "indicators": [
+                {"name": "MA", "pane": "candle", "params": [20, 60], "visible": True},
+                {"name": "MACD", "pane": "own", "params": [12, 26, 9], "visible": True},
+            ]},
+            {"symbol": "testfx", "timeframe": "d1", "view": {"barSpace": None, "offsetRight": None, "rightTimestamp": None}, "indicators": []},
         ]
         assert [d["points"] for d in reopened["drawings"]] == [
             [{"timestamp": ms("2024-01-09 03:00"), "value": 1.2012}, {"timestamp": ms("2024-01-10 08:00"), "value": 1.1987}],
@@ -229,7 +235,7 @@ class TestStudies:
         assert {item["id"] for item in listed} == {first["id"], second["id"]}
         assert listed[0]["updated"] >= listed[1]["updated"]
         other = next(item for item in listed if item["id"] == second["id"])
-        assert other == {"id": second["id"], "symbol": "other", "timeframe": "h1", "focus": ms("2024-01-10 12:00"), "tag": "乙", "excerpt": "多行 评论",
+        assert other == {"id": second["id"], "symbol": "other", "timeframes": ["h1", "d1"], "focus": ms("2024-01-10 12:00"), "tag": "乙", "excerpt": "多行 评论",
                          "drawings": 3, "created": second["created"], "updated": second["updated"], "hasScreenshot": False}
 
     def test_delete_moves_to_the_trash(self, studies):
@@ -256,6 +262,9 @@ class TestStudies:
         {"unknownField": 1},
         {"drawings": [{"id": "x", "name": "segment"}]},
         {"symbol": None},
+        {"panes": []},
+        {"panes": [{"symbol": "testfx"}]},
+        {"layout": {"columns": 9, "rows": 1}},
     ])
     def test_invalid_content_is_refused(self, studies, changes):
         client, folder = studies
@@ -265,6 +274,39 @@ class TestStudies:
     def test_empty_list(self, studies):
         client, _ = studies
         assert client.get("/api/studies").json() == []
+
+    def test_study_of_the_first_version_opens_as_one_pane(self, studies):
+        """Studies saved before there were panes described their single chart themselves."""
+        client, folder = studies
+        old = folder / "20260928-224423-b226"
+        old.mkdir(parents=True)
+        (old / "notes.md").write_text("旧记录的评论", encoding="utf-8")
+        (old / "screenshot.png").write_bytes(PNG)
+        first = {
+            "symbol": "testfx", "timeframe": "d1", "focus": ms("2024-01-10 07:00"), "tag": "旧记录", "timezone": "Asia/Shanghai",
+            "drawings": [{"id": "dx", "name": "box", "points": [{"timestamp": ms("2024-01-08"), "value": 1.21}, {"timestamp": ms("2024-01-12"), "value": 1.19}],
+                          "timeframe": "d1", "styles": None, "extendData": {"color": "#2563eb"}, "lock": False, "visible": True, "zLevel": 0}],
+            "indicators": [{"name": "MA", "pane": "candle", "params": [20.0], "visible": True}],
+            "view": {"barSpace": 25.7, "offsetRight": -1.89, "rightTimestamp": ms("2024-01-15")},
+            "id": "20260928-224423-b226", "created": "2026-09-28T22:44:23Z", "updated": "2026-09-28T22:50:00Z", "schemaVersion": 1,
+        }
+        (old / "study.json").write_text(json.dumps(first, ensure_ascii=False), encoding="utf-8")
+        before = (old / "study.json").read_bytes()
+
+        [listed] = client.get("/api/studies").json()
+        assert listed["tag"] == "旧记录" and listed["timeframes"] == ["d1"] and listed["excerpt"] == "旧记录的评论"
+        opened = client.get("/api/studies/20260928-224423-b226").json()
+        assert opened["panes"] == [{"symbol": "testfx", "timeframe": "d1", "indicators": first["indicators"], "view": first["view"]}]
+        assert opened["layout"] == {"columns": 1, "rows": 1}
+        assert opened["drawings"][0]["symbol"] == "testfx" and opened["drawings"][0]["points"] == first["drawings"][0]["points"]
+        assert opened["comment"] == "旧记录的评论" and opened["timezone"] == "Asia/Shanghai" and opened["hasScreenshot"]
+        assert (old / "study.json").read_bytes() == before, "opening a study must not rewrite it"
+
+        saved = client.put("/api/studies/20260928-224423-b226", json={key: opened[key] for key in ("symbol", "focus", "tag", "comment", "drawings", "panes", "layout", "timezone")})
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["created"] == "2026-09-28T22:44:23Z"
+        [kept] = (old / "history").iterdir()
+        assert (kept / "study.json").read_bytes() == before, "the study as it was is kept"
 
 
 class TestFrontend:

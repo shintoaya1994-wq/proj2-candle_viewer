@@ -1,15 +1,17 @@
-"""The local web application: bars and studies over HTTP, plus the built frontend."""
+"""The local web application: bars, studies and signals over HTTP, plus the built frontend."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..market import store
 from .bars import COLUMNS, MAX_COUNT, BarStore, UnknownSeries
+from .signals import Changes, InvalidSignal, NewSignal, NewTouch, NewVersion, SignalNotFound, SignalStore, SignalSummary, Strategy, StrategyText, TouchSummary
 from .studies import InvalidStudy, Study, StudyContent, StudyNotFound, StudyStore, Summary
 
 FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "dist"
@@ -22,12 +24,27 @@ npm install &amp;&amp; npm run build</pre>
 <p>行情和记录的接口已经在运行，见 <a href="/api/docs">/api/docs</a>。</p>
 """
 
+Kind = Literal["signal", "touch"]
+
 
 def create_app(workspace: Path, convention: str = "utc", frontend: Path | None = FRONTEND) -> FastAPI:
     workspace = Path(workspace).expanduser()
     bars = BarStore(store.dataset_dir(workspace, convention))
     studies = StudyStore(workspace / "studies")
+    signals = SignalStore(workspace / "signals")
     app = FastAPI(title="Candle Viewer", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
+
+    @app.exception_handler(StudyNotFound)
+    @app.exception_handler(SignalNotFound)
+    def not_found(_, error: LookupError) -> JSONResponse:
+        return JSONResponse({"detail": f"not found: {error}"}, status_code=404)
+
+    @app.exception_handler(InvalidStudy)
+    @app.exception_handler(InvalidSignal)
+    def invalid(_, error: ValueError) -> JSONResponse:
+        return JSONResponse({"detail": str(error)}, status_code=422)
+
+    # -- bars ------------------------------------------------------------------
 
     @app.get("/api/meta")
     def meta() -> dict:
@@ -54,46 +71,99 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
         rows = frame.astype(object).where(frame.notna(), None).to_numpy().tolist() if len(frame) else []
         return {"columns": list(COLUMNS), "bars": rows, "older": found.older, "newer": found.newer}
 
+    # -- studies that stand on their own ---------------------------------------
+
     @app.get("/api/studies")
     def list_studies() -> list[Summary]:
         return studies.list()
 
     @app.post("/api/studies", status_code=201)
     def create_study(content: StudyContent) -> Study:
-        try:
-            return studies.create(content)
-        except InvalidStudy as error:
-            raise HTTPException(422, str(error)) from error
+        return studies.create(content)
 
     @app.get("/api/studies/{study_id}")
     def get_study(study_id: str) -> Study:
-        try:
-            return studies.get(study_id)
-        except StudyNotFound as error:
-            raise HTTPException(404, f"no study {study_id}") from error
+        return studies.get(study_id)
 
     @app.put("/api/studies/{study_id}")
     def update_study(study_id: str, content: StudyContent) -> Study:
-        try:
-            return studies.update(study_id, content)
-        except StudyNotFound as error:
-            raise HTTPException(404, f"no study {study_id}") from error
-        except InvalidStudy as error:
-            raise HTTPException(422, str(error)) from error
+        return studies.update(study_id, content)
 
     @app.delete("/api/studies/{study_id}", status_code=204)
     def delete_study(study_id: str) -> None:
-        try:
-            studies.delete(study_id)
-        except StudyNotFound as error:
-            raise HTTPException(404, f"no study {study_id}") from error
+        studies.delete(study_id)
 
     @app.get("/api/studies/{study_id}/screenshot")
     def screenshot(study_id: str) -> FileResponse:
-        try:
-            return FileResponse(studies.screenshot(study_id), media_type="image/png")
-        except StudyNotFound as error:
-            raise HTTPException(404, str(error)) from error
+        return FileResponse(studies.screenshot(study_id), media_type="image/png")
+
+    # -- signals ---------------------------------------------------------------
+
+    @app.get("/api/signals")
+    def list_signals(symbol: str | None = None) -> list[SignalSummary]:
+        return signals.list(symbol)
+
+    @app.post("/api/signals", status_code=201)
+    def create_signal(new: NewSignal) -> SignalSummary:
+        return signals.get(signals.create(new).id)
+
+    @app.get("/api/signals/{signal_id}")
+    def get_signal(signal_id: str) -> SignalSummary:
+        return signals.get(signal_id)
+
+    @app.patch("/api/signals/{signal_id}")
+    def change_signal(signal_id: str, changes: Changes) -> SignalSummary:
+        return signals.change(signal_id, changes)
+
+    @app.post("/api/signals/{signal_id}/versions", status_code=201)
+    def add_version(signal_id: str, new: NewVersion) -> SignalSummary:
+        return signals.add_version(signal_id, new)
+
+    @app.delete("/api/signals/{signal_id}", status_code=204)
+    def delete_signal(signal_id: str) -> None:
+        signals.delete(signal_id)
+
+    # -- touches and their strategies ------------------------------------------
+
+    @app.post("/api/signals/{signal_id}/touches", status_code=201)
+    def add_touch(signal_id: str, new: NewTouch) -> TouchSummary:
+        return signals.add_touch(signal_id, new)
+
+    @app.get("/api/touches/{touch_id}")
+    def get_touch(touch_id: str) -> TouchSummary:
+        return signals.touch(touch_id)
+
+    @app.delete("/api/touches/{touch_id}", status_code=204)
+    def delete_touch(touch_id: str) -> None:
+        signals.delete_touch(touch_id)
+
+    @app.get("/api/touches/{touch_id}/strategies")
+    def get_strategies(touch_id: str) -> list[Strategy]:
+        return signals.strategies(touch_id)
+
+    @app.put("/api/touches/{touch_id}/strategies")
+    def save_strategies(touch_id: str, texts: list[StrategyText]) -> list[Strategy]:
+        return signals.save_strategies(touch_id, texts)
+
+    # -- the study of a signal or a touch --------------------------------------
+
+    def studied(kind: Kind, plural: str) -> None:
+        @app.get(f"/api/{plural}/{{subject_id}}/study")
+        def get_subject_study(subject_id: str) -> Study | None:
+            return signals.study(kind, subject_id)
+
+        @app.put(f"/api/{plural}/{{subject_id}}/study")
+        def save_subject_study(subject_id: str, content: StudyContent) -> Study:
+            return signals.save_study(kind, subject_id, content)
+
+        @app.get(f"/api/{plural}/{{subject_id}}/screenshot")
+        def subject_screenshot(subject_id: str) -> FileResponse:
+            return FileResponse(signals.screenshot(kind, subject_id), media_type="image/png")
+
+    studied("signal", "signals")
+    studied("touch", "touches")
+
+    # -- the interface ---------------------------------------------------------
 
     if frontend is not None and frontend.is_dir():
         app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
