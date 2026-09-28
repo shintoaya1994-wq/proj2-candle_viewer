@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..market import store
@@ -13,6 +13,14 @@ from .bars import COLUMNS, MAX_COUNT, BarStore, UnknownSeries
 from .studies import InvalidStudy, Study, StudyContent, StudyNotFound, StudyStore, Summary
 
 FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>K 线研究工作台</title>
+<body style="font-family: system-ui, sans-serif; padding: 48px; line-height: 1.7">
+<h1>界面还没有构建</h1>
+<p>请在代码目录里运行下面两条命令，然后刷新本页。</p>
+<pre>cd frontend
+npm install &amp;&amp; npm run build</pre>
+<p>行情和记录的接口已经在运行，见 <a href="/api/docs">/api/docs</a>。</p>
+"""
 
 
 def create_app(workspace: Path, convention: str = "utc", frontend: Path | None = FRONTEND) -> FastAPI:
@@ -32,10 +40,11 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
         before: int | None = None,
         after: int | None = None,
         around: int | None = None,
+        since: int | None = None,
         count: int = Query(1000, ge=1, le=MAX_COUNT),
     ) -> dict:
         try:
-            found = bars.window(symbol, timeframe, before=before, after=after, around=around, count=count)
+            found = bars.window(symbol, timeframe, before=before, after=after, around=around, since=since, count=count)
         except UnknownSeries as error:
             raise HTTPException(404, f"no bars for {error}") from error
         except ValueError as error:
@@ -43,7 +52,7 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
         frame = found.bars
         # JSON has no NaN; an unknown volume travels as null.
         rows = frame.astype(object).where(frame.notna(), None).to_numpy().tolist() if len(frame) else []
-        return {"columns": list(COLUMNS), "bars": rows, "more": {"backward": found.older, "forward": found.newer}}
+        return {"columns": list(COLUMNS), "bars": rows, "older": found.older, "newer": found.newer}
 
     @app.get("/api/studies")
     def list_studies() -> list[Summary]:
@@ -88,6 +97,12 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
 
     if frontend is not None and frontend.is_dir():
         app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
+    elif frontend is not None:
+
+        @app.get("/", response_class=HTMLResponse)
+        def not_built() -> str:
+            return NOT_BUILT
+
     return app
 
 

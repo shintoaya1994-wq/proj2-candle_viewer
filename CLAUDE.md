@@ -21,13 +21,21 @@ The repository is public. Market data, research records, screenshots and private
 ## Commands
 
 ```bash
-uv sync                      # install dependencies
-uv run pytest                # tests
-node tools/dukascopy/fetch.mjs --symbols eurusd --to 2026-09-26    # download m1 and d1, resumable
+uv sync                                        # install Python dependencies
+uv run pytest                                  # backend and data pipeline tests
+uv run candle-viewer                           # serve the application on http://127.0.0.1:8765
 uv run candle-data rebuild --source ~/candle_workspace/raw/dukascopy   # rebuild all timeframes
-uv run candle-data check                                               # verify a rebuilt dataset
-uv run candle-viewer                                                   # serve the application on http://127.0.0.1:8765
-node tools/dukascopy/repair.mjs --symbols eurusd                       # fill holes from ticks, then rebuild again
+uv run candle-data check                       # verify a rebuilt dataset
+
+cd frontend
+npm install
+npm run dev                                    # Vite on port 5173, passes /api on to port 8765
+npm run build                                  # type check and build into frontend/dist, which the backend serves
+npm test                                       # vitest: logic that needs no browser
+npm run e2e                                    # headless Chrome against the real application, needs a build
+
+node tools/dukascopy/fetch.mjs --symbols eurusd --to 2026-09-26      # download d1, h1 and m1, resumable
+node tools/dukascopy/repair.mjs --symbols eurusd                     # fill holes from ticks, then rebuild again
 ```
 
 ## Layout
@@ -46,9 +54,25 @@ node tools/dukascopy/repair.mjs --symbols eurusd                       # fill ho
   - `quality.py`, `report.py` comparison with the original files, Chinese report
   - `verify.py` independent check of a stored dataset
   - `store.py` dataset layout on disk
+- `frontend/` – the interface (React, TypeScript, Vite, klinecharts 10.0.3)
+  - `src/chart/ChartView.tsx` the chart: owns the klinecharts instance, the drawings and the view
+  - `src/chart/placement.ts` where drawings go on a timeframe; free of the chart library and unit tested
+  - `src/chart/drawings.ts` drawing tools, the custom box and note, conversion to and from stored state
+  - `src/chart/loader.ts` feeds the chart from `/api/bars` window by window
+  - `src/timeframes.ts` `barStart` mirrors `SessionCalendar.bar_start` of the backend; keep the two in step
+  - `e2e/run.mjs` acceptance test: draw, comment, save, close, reopen
 - `tools/dukascopy/` – Node.js tools built on dukascopy-node: `fetch.mjs` downloads, `repair.mjs` fills holes from ticks, `client.mjs` paces and caches requests
 - `tests/` – pytest, synthetic data
 - `docs/data-conventions.md` – data rules, in Chinese
+
+## Things to know about klinecharts 10
+
+- Trust `node_modules/klinecharts/dist/index.d.ts` over memory of version 9.
+- The data loader is asked "forward" for bars before the first one the chart holds and "backward" for bars after the last one.
+- A drawing can only be placed inside the bars the chart holds; outside them the position is estimated from the calendar. The first window of bars is therefore stretched back to the earliest anchor (`since`).
+- Clicks are told from drags and double clicks by timing. Automated clicks need pauses: about 60 ms down, 450 ms between clicks, two clicks within 500 ms for a double click.
+- `lock: true` on an overlay switches off all its events.
+- The library has no rectangle; `box` and `note` are registered by the application.
 
 ## Concepts the user insists on
 

@@ -63,14 +63,14 @@ class TestBars:
         body = bars(client, count=300)
         assert body["columns"] == ["timestamp", "open", "high", "low", "close", "volume", "n_m1", "bar_flags"]
         assert timestamps(body) == minutes["timestamp"].tail(300).tolist()
-        assert body["more"] == {"backward": True, "forward": False}
+        assert (body["older"], body["newer"]) == (True, False)
         assert body["bars"][-1][1:5] == minutes[["open", "high", "low", "close"]].iloc[-1].tolist()
 
     def test_bars_before_a_time_cross_row_groups(self, client, minutes):
         edge = int(minutes["timestamp"].iloc[5000])
         body = bars(client, before=edge, count=2500)
         assert timestamps(body) == minutes["timestamp"].iloc[2500:5000].tolist()
-        assert body["more"] == {"backward": True, "forward": True}
+        assert (body["older"], body["newer"]) == (True, True)
 
     def test_bars_before_a_time_inside_a_weekend(self, client, minutes):
         body = bars(client, before=ms("2024-01-13 12:00"), count=10)
@@ -80,23 +80,31 @@ class TestBars:
         edge = int(minutes["timestamp"].iloc[-501])
         body = bars(client, after=edge, count=1000)
         assert timestamps(body) == minutes["timestamp"].tail(500).tolist()
-        assert body["more"] == {"backward": True, "forward": False}
+        assert (body["older"], body["newer"]) == (True, False)
 
     def test_bars_around_a_time(self, client, minutes):
         body = bars(client, around=ms("2024-01-17 12:00"), count=600)
         found = timestamps(body)
         assert len(found) == 600 and found.index(ms("2024-01-17 12:00")) == 300
 
+    def test_window_stretched_back_to_an_earlier_time(self, client, minutes):
+        body = bars(client, around=ms("2024-01-17 12:00"), since=ms("2024-01-09 06:30"), count=600)
+        found = timestamps(body)
+        assert found[0] == ms("2024-01-09 06:30") and found[-1] == timestamps(bars(client, around=ms("2024-01-17 12:00"), count=600))[-1]
+        assert found == minutes["timestamp"][(minutes["timestamp"] >= found[0]) & (minutes["timestamp"] <= found[-1])].tolist()
+        later = bars(client, around=ms("2024-01-17 12:00"), since=ms("2024-01-18 00:00"), count=600)
+        assert timestamps(later) == timestamps(bars(client, around=ms("2024-01-17 12:00"), count=600))
+
     def test_start_of_data(self, client, minutes):
         body = bars(client, before=int(minutes["timestamp"].iloc[100]), count=500)
-        assert len(body["bars"]) == 100 and body["more"] == {"backward": False, "forward": True}
+        assert len(body["bars"]) == 100 and (body["older"], body["newer"]) == (False, True)
         assert bars(client, before=int(minutes["timestamp"].iloc[0]))["bars"] == []
 
     def test_other_timeframes(self, client, workspace):
         daily = pd.read_parquet(store.bars_path(store.dataset_dir(workspace, "utc"), "testfx", "d1"))
         response = client.get("/api/bars", params={"symbol": "testfx", "timeframe": "d1"})
         assert timestamps(response.json()) == daily["timestamp"].tolist()
-        assert response.json()["more"] == {"backward": False, "forward": False}
+        assert (response.json()["older"], response.json()["newer"]) == (False, False)
 
     @pytest.mark.parametrize("query, status", [
         ({"symbol": "nothere", "timeframe": "m1"}, 404),
@@ -256,4 +264,20 @@ class TestStudies:
 
     def test_empty_list(self, studies):
         client, _ = studies
+        assert client.get("/api/studies").json() == []
+
+
+class TestFrontend:
+    def test_built_frontend_is_served(self, tmp_path):
+        built = tmp_path / "dist"
+        built.mkdir()
+        (built / "index.html").write_text("<title>built</title>", encoding="utf-8")
+        client = TestClient(create_app(tmp_path, frontend=built))
+        assert "built" in client.get("/").text
+        assert client.get("/api/studies").json() == []
+
+    def test_missing_frontend_explains_how_to_build_it(self, tmp_path):
+        client = TestClient(create_app(tmp_path, frontend=tmp_path / "nothing"))
+        response = client.get("/")
+        assert response.status_code == 200 and "npm run build" in response.text
         assert client.get("/api/studies").json() == []

@@ -1,0 +1,327 @@
+:root {
+  --ink: #1f2933;
+  --dim: #6b7785;
+  --line: #d9dee5;
+  --ground: #f4f6f8;
+  --panel: #ffffff;
+  --accent: #2563eb;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ground);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+select {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: #aab4c0;
+}
+
+button:disabled {
+  color: #a9b2bd;
+  cursor: default;
+}
+
+button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.dim {
+  color: var(--dim);
+}
+
+.notice {
+  padding: 48px;
+  font-size: 15px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.group.end {
+  margin-left: auto;
+}
+
+.segmented {
+  display: flex;
+}
+
+.segmented button {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.segmented button:first-child {
+  margin-left: 0;
+  border-radius: 4px 0 0 4px;
+}
+
+.segmented button:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.segmented button.on {
+  position: relative;
+  border-color: var(--accent);
+  background: #e8efff;
+  color: var(--accent);
+}
+
+.colors {
+  display: flex;
+  gap: 4px;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.swatch.on {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+.menu {
+  position: relative;
+}
+
+.popover {
+  position: absolute;
+  z-index: 20;
+  top: 32px;
+  left: 0;
+  width: 300px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+}
+
+.indicator {
+  display: grid;
+  grid-template-columns: 18px 1fr 110px;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 0;
+}
+
+.indicator .params {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.work {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chart {
+  flex: 1;
+  min-height: 0;
+  background: var(--panel);
+}
+
+.status {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.status span:last-child {
+  margin-left: auto;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 320px;
+  padding: 12px;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  overflow-y: auto;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field span {
+  color: var(--dim);
+}
+
+.field input,
+.field textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+}
+
+.field textarea {
+  min-height: 180px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.studies h2,
+.dialog h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.studies ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.study {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.study.current {
+  border-color: var(--accent);
+  background: #f3f7ff;
+}
+
+.study .open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  height: auto;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.study .excerpt {
+  overflow: hidden;
+  color: var(--dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.study .remove {
+  height: auto;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0 6px 6px 0;
+  background: none;
+  color: var(--dim);
+  font-size: 16px;
+}
+
+.veil {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(15 23 42 / 35%);
+}
+
+.dialog {
+  width: 340px;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 16px 48px rgb(15 23 42 / 25%);
+}
+
+.dialog input {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}

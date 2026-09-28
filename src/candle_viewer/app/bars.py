@@ -21,7 +21,8 @@ import pyarrow.parquet as pq
 from ..market import store, timeframes
 
 COLUMNS = ("timestamp", "open", "high", "low", "close", "volume", "n_m1", "bar_flags")
-MAX_COUNT = 5000
+MAX_COUNT = 5000       # bars of an ordinary window
+MAX_REACH = 200_000    # bars of a window stretched back to an earlier time
 _SYMBOL = re.compile(r"^[a-z0-9]+$")
 _GROUPS_KEPT = 24   # row groups held in memory per process
 
@@ -130,12 +131,26 @@ class BarStore:
             described.append({"name": symbol, "pip": pip, "digits": 3 if pip >= 0.01 else 5, "timeframes": series})
         return {"convention": manifest.get("convention", "utc"), "generated": manifest.get("generated"), "symbols": described}
 
-    def window(self, symbol: str, timeframe: str, *, before: int | None = None, after: int | None = None, around: int | None = None, count: int = 1000) -> Window:
+    def window(
+        self,
+        symbol: str,
+        timeframe: str,
+        *,
+        before: int | None = None,
+        after: int | None = None,
+        around: int | None = None,
+        since: int | None = None,
+        count: int = 1000,
+    ) -> Window:
         """A window of at most ``count`` bars.
 
         ``before``: the bars just before that time. ``after``: the bars just
         after it. ``around``: bars on both sides of it. None of them: the
         latest bars.
+
+        ``since`` stretches the window back so that it begins no later than
+        that time. A chart needs this to place drawings anchored far in the
+        past: it can only place what lies inside the bars it holds.
         """
         if sum(value is not None for value in (before, after, around)) > 1:
             raise ValueError("give only one of before, after and around")
@@ -154,4 +169,6 @@ class BarStore:
             stop = file.rows
             start = stop - count
         start, stop = max(0, start), min(file.rows, stop)
+        if since is not None:
+            start = max(min(start, file.position(since)), stop - MAX_REACH, 0)
         return Window(file.between(start, stop), older=start > 0, newer=stop < file.rows)
