@@ -309,6 +309,11 @@ class TestStudies:
         assert (kept / "study.json").read_bytes() == before, "the study as it was is kept"
 
 
+class TestVersion:
+    def test_the_interface_can_tell_which_program_it_talks_to(self, client):
+        assert client.get("/api/meta").json()["api"] == 2
+
+
 class TestFrontend:
     def test_built_frontend_is_served(self, tmp_path):
         built = tmp_path / "dist"

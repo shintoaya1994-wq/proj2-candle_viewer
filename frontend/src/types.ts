@@ -15,6 +15,8 @@ export interface SymbolInfo {
 }
 
 export interface Meta {
+  /** What the program answers to; missing in the program of the first stage. */
+  api?: number;
   convention: string;
   generated: string | null;
   symbols: SymbolInfo[];

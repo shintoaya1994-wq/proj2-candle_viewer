@@ -66,6 +66,21 @@ button.primary {
 .notice {
   padding: 48px;
   font-size: 15px;
+  line-height: 1.7;
+}
+
+.notice h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+.notice pre {
+  display: inline-block;
+  margin: 4px 0;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
 }
 
 .app {

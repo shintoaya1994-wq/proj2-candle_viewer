@@ -15,6 +15,8 @@ from .signals import Changes, InvalidSignal, NewSignal, NewTouch, NewVersion, Si
 from .studies import InvalidStudy, Study, StudyContent, StudyNotFound, StudyStore, Summary
 
 FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+# What the interface may ask for. It goes up whenever an interface built for it would not work with the program before.
+API = 2
 NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>K 线研究工作台</title>
 <body style="font-family: system-ui, sans-serif; padding: 48px; line-height: 1.7">
 <h1>界面还没有构建</h1>
@@ -48,7 +50,7 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
 
     @app.get("/api/meta")
     def meta() -> dict:
-        return bars.meta()
+        return {**bars.meta(), "api": API}
 
     @app.get("/api/bars")
     def window(
