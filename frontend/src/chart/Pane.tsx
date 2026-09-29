@@ -133,6 +133,9 @@ export const Pane = forwardRef<PaneHandle, Props>(function Pane(props, ref) {
   const placing = useRef(false);
   const quiet = useRef(false);
   const loaded = useRef(false);
+  /** Whether the chart holds the bars up to the end of the data, and whether it shows the line of the last price. */
+  const atEnd = useRef(false);
+  const lastPrice = useRef<boolean | null>(null);
   const latest = useRef(props);
   latest.current = props;
 
@@ -328,6 +331,18 @@ export const Pane = forwardRef<PaneHandle, Props>(function Pane(props, ref) {
     };
   }
 
+  /**
+   * The line of the last price is drawn at the close of the last bar the
+   * chart holds. It says where the market is only if that bar is the last of
+   * the data, and it belongs to the view only while that bar is in view.
+   */
+  function showLastPrice(chart: Chart) {
+    const wanted = atEnd.current && chart.getVisibleRange().to >= chart.getDataList().length;
+    if (wanted === lastPrice.current) return;
+    lastPrice.current = wanted;
+    chart.setStyles({ candle: { priceMark: { last: { show: wanted } } } });
+  }
+
   /** Makes the price axis wide enough for the prices of the symbol. */
   function fitAxis(chart: Chart) {
     const highest = bars.current.highs.reduce((most, high) => Math.max(most, high), 0);
@@ -375,6 +390,8 @@ export const Pane = forwardRef<PaneHandle, Props>(function Pane(props, ref) {
     if (!chart) return;
     chartRef.current = chart;
     loaded.current = false;
+    atEnd.current = false;
+    lastPrice.current = null;
     bars.current = NO_BARS;
     shown.current = new Set();
     pending.current = { kind: 'restore', view: start.view, focus: start.focus, mark: start.mark ?? null };
@@ -390,6 +407,7 @@ export const Pane = forwardRef<PaneHandle, Props>(function Pane(props, ref) {
     };
     chart.subscribeAction('onScroll', looked);
     chart.subscribeAction('onZoom', looked);
+    chart.subscribeAction('onVisibleRangeChange', () => showLastPrice(chart));
     chart.subscribeAction('onCrosshairChange', (data) => {
       const crosshair = (data ?? {}) as Crosshair;
       if (crosshair.paneId === POINTED || crosshair.x === undefined) return;
@@ -415,10 +433,9 @@ export const Pane = forwardRef<PaneHandle, Props>(function Pane(props, ref) {
           const marked = earliestMark(latest.current.marks);
           return { around, since: drawn === null ? marked : marked === null ? drawn : Math.min(drawn, marked) };
         },
-        onLoaded: (first, atEnd) => {
+        onLoaded: (first, latestHeld) => {
           if (chartRef.current !== chart) return;
-          // The line of the last price is the price of the last bar held. It means something only at the end of the data.
-          chart.setStyles({ candle: { priceMark: { last: { show: atEnd } } } });
+          atEnd.current = latestHeld;
           bars.current = barsOf(chart.getDataList());
           if (first) {
             rebuild(chart);
@@ -426,6 +443,7 @@ export const Pane = forwardRef<PaneHandle, Props>(function Pane(props, ref) {
           } else {
             replace(chart);
           }
+          showLastPrice(chart);
           latest.current.onLoaded?.(bars.current.stamps.length, paneKey);
         },
         onError: (error) => latest.current.onLoadError?.(error instanceof Error ? error.message : String(error)),
