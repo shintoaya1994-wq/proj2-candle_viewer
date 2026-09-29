@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { barStart } from './timeframes';
+import { barEnd, barStart, rank } from './timeframes';
 
 const ms = (text: string) => Date.parse(`${text.replace(' ', 'T')}${text.length > 10 ? ':00' : 'T00:00:00'}Z`);
 
@@ -43,5 +43,26 @@ describe('barStart', () => {
 
   it('handles instants before 1970', () => {
     expect(barStart(ms('1969-12-28 22:30'), 'd1')).toBe(ms('1969-12-29'));
+  });
+});
+
+describe('barEnd', () => {
+  it.each([
+    ['m15', '2024-01-10 13:45', '2024-01-10 14:00'],
+    ['h4', '2024-01-10 20:00', '2024-01-11 00:00'],
+    ['d1', '2024-01-10', '2024-01-11'],
+    ['w1', '2024-01-08', '2024-01-15'],
+    ['1mo', '2024-12-01', '2025-01-01'],
+    ['3mo', '2024-10-01', '2025-01-01'],
+  ])('of a bar of %s', (name, start, expected) => {
+    expect(barEnd(ms(start), name)).toBe(ms(expected));
+  });
+});
+
+describe('rank', () => {
+  it('orders the timeframes from fine to coarse', () => {
+    expect(rank('h1')).toBeLessThan(rank('d1'));
+    expect(rank('1mo')).toBeLessThan(rank('3mo'));
+    expect(rank('m7')).toBe(-1);
   });
 });

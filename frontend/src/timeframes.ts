@@ -23,10 +23,18 @@ export const TIMEFRAMES: TimeframeInfo[] = [
   { name: '3mo', label: '季', title: '季线', period: { type: 'month', span: 3 }, kind: 'month', span: 3 },
 ];
 
+/** The charts a study of a signal or a touch starts with. */
+export const STUDY_TIMEFRAMES = ['h1', 'h4', 'd1', 'w1', '1mo', '3mo'];
+
 export function timeframe(name: string): TimeframeInfo {
   const found = TIMEFRAMES.find((item) => item.name === name);
   if (!found) throw new Error(`unknown timeframe ${name}`);
   return found;
+}
+
+/** Position among the timeframes, the finest first; -1 for a name that is not a timeframe. */
+export function rank(name: string): number {
+  return TIMEFRAMES.findIndex((item) => item.name === name);
 }
 
 const MINUTE = 60_000;
@@ -53,4 +61,14 @@ export function barStart(timestamp: number, name: string): number {
   const date = new Date(day * DAY);
   const month = date.getUTCMonth() - (date.getUTCMonth() % tf.span);
   return Date.UTC(date.getUTCFullYear(), month, 1);
+}
+
+/** Start of the bar after the one that starts at `start`, on the grid of the timeframe. */
+export function barEnd(start: number, name: string): number {
+  const tf = timeframe(name);
+  if (tf.kind === 'intraday') return start + tf.span * MINUTE;
+  if (tf.kind === 'day') return start + DAY;
+  if (tf.kind === 'week') return start + 7 * DAY;
+  const date = new Date(start);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + tf.span, 1);
 }

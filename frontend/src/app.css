@@ -5,6 +5,7 @@
   --ground: #f4f6f8;
   --panel: #ffffff;
   --accent: #2563eb;
+  --signal: #7c3aed;
   font-family: system-ui, -apple-system, 'Segoe UI', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
   font-size: 13px;
   color: var(--ink);
@@ -238,13 +239,18 @@ button.primary {
   resize: vertical;
 }
 
-.studies h2,
+.side h2,
 .dialog h2 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
   margin: 0 0 6px;
   font-size: 13px;
 }
 
-.studies ul {
+.side ul,
+.side ol {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -253,18 +259,32 @@ button.primary {
   list-style: none;
 }
 
-.study {
+.signals ul {
+  max-height: 38vh;
+  overflow-y: auto;
+}
+
+.filter {
+  width: 100%;
+  height: 28px;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.row {
   display: flex;
   border: 1px solid var(--line);
   border-radius: 6px;
 }
 
-.study.current {
-  border-color: var(--accent);
-  background: #f3f7ff;
+.row.current {
+  border-color: var(--signal);
+  background: #f6f2ff;
 }
 
-.study .open {
+.row .open {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -277,14 +297,14 @@ button.primary {
   text-align: left;
 }
 
-.study .excerpt {
+.row .open span,
+.row .open strong {
   overflow: hidden;
-  color: var(--dim);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.study .remove {
+.row .remove {
   height: auto;
   border: 0;
   border-left: 1px solid var(--line);
@@ -292,6 +312,119 @@ button.primary {
   background: none;
   color: var(--dim);
   font-size: 16px;
+}
+
+.chosen,
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--signal);
+  border-radius: 6px;
+  background: #faf8ff;
+}
+
+.chosen h2 {
+  margin: 0;
+}
+
+.comment,
+.hover p {
+  max-height: 150px;
+  margin: 2px 0;
+  overflow: hidden;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.touches {
+  margin-top: 4px !important;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 8px;
+}
+
+.pair select,
+.pair input {
+  width: 100%;
+  height: 30px;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.choice {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+}
+
+.field .choice span,
+.dialog .choice span {
+  color: var(--ink);
+}
+
+.versions li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.notice-line {
+  margin: 0 0 6px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: #fff7e6;
+}
+
+.strategies {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.strategies p {
+  margin: 0;
+}
+
+.strategy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.strategy-head {
+  display: flex;
+  gap: 4px;
+}
+
+.strategy input,
+.strategy textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.strategy textarea {
+  min-height: 70px;
+  line-height: 1.5;
+  resize: vertical;
 }
 
 .veil {
@@ -311,7 +444,7 @@ button.primary {
   box-shadow: 0 16px 48px rgb(15 23 42 / 25%);
 }
 
-.dialog input {
+.dialog input:not([type='radio']) {
   width: 100%;
   height: 30px;
   padding: 0 8px;
@@ -319,9 +452,131 @@ button.primary {
   border-radius: 4px;
 }
 
+.dialog p {
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+.dialog .choice {
+  margin-bottom: 8px;
+}
+
 .actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+.actions.start {
+  justify-content: flex-start;
+  margin-top: 6px;
+}
+
+/* The charts of a study, side by side. */
+
+.panes {
+  position: relative;
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-height: 0;
+  padding: 4px;
+}
+
+.frame {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.frame.max {
+  position: absolute;
+  z-index: 5;
+  inset: 4px;
+}
+
+.frame-head {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.frame-head button,
+.frame-head select {
+  height: 24px;
+  padding: 0 6px;
+}
+
+.frame-head .popover {
+  top: 27px;
+}
+
+.title {
+  font-size: 14px;
+}
+
+button.plain {
+  height: 24px;
+  padding: 0 6px;
+  border-color: transparent;
+  background: none;
+  color: var(--accent);
+}
+
+button.end {
+  margin-left: auto;
+}
+
+button.toggle.on {
+  border-color: var(--accent);
+  background: #e8efff;
+  color: var(--accent);
+}
+
+button.danger {
+  color: #be123c;
+}
+
+/* What shows next to the mouse on the main chart. */
+
+.hover,
+.context {
+  position: fixed;
+  z-index: 40;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 16%);
+}
+
+.hover {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  border-color: var(--signal);
+  pointer-events: none;
+}
+
+.context {
+  display: flex;
+  flex-direction: column;
+  width: 180px;
+  padding: 4px;
+}
+
+.context button {
+  height: 30px;
+  border: 0;
+  text-align: left;
+}
+
+.context button:hover {
+  background: var(--ground);
 }

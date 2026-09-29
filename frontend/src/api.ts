@@ -1,4 +1,19 @@
-import type { BarsResponse, Meta, Study, StudyContent, StudySummary } from './types';
+import type {
+  BarsResponse,
+  Meta,
+  NewSignal,
+  NewTouch,
+  NewVersion,
+  Signal,
+  SignalChanges,
+  Strategy,
+  StrategyText,
+  Study,
+  StudyContent,
+  StudySummary,
+  SubjectKind,
+  Touch,
+} from './types';
 
 export class ApiError extends Error {
   constructor(
@@ -39,6 +54,9 @@ export interface BarsQuery {
   count?: number;
 }
 
+/** Where the records of a signal or a touch are found. */
+const home = (kind: SubjectKind, id: string) => `/api/${kind === 'signal' ? 'signals' : 'touches'}/${id}`;
+
 export const api = {
   meta: () => request<Meta>('/api/meta'),
   bars(query: BarsQuery) {
@@ -48,9 +66,28 @@ export const api = {
     }
     return request<BarsResponse>(`/api/bars?${params}`);
   },
+
+  // studies that stand on their own
   studies: () => request<StudySummary[]>('/api/studies'),
   study: (id: string) => request<Study>(`/api/studies/${id}`),
   create: (content: StudyContent) => request<Study>('/api/studies', json('POST', content)),
   update: (id: string, content: StudyContent) => request<Study>(`/api/studies/${id}`, json('PUT', content)),
   remove: (id: string) => request<void>(`/api/studies/${id}`, { method: 'DELETE' }),
+
+  signals: (symbol: string) => request<Signal[]>(`/api/signals?symbol=${encodeURIComponent(symbol)}`),
+  signal: (id: string) => request<Signal>(`/api/signals/${id}`),
+  createSignal: (signal: NewSignal) => request<Signal>('/api/signals', json('POST', signal)),
+  changeSignal: (id: string, changes: SignalChanges) => request<Signal>(`/api/signals/${id}`, json('PATCH', changes)),
+  addVersion: (id: string, version: NewVersion) => request<Signal>(`/api/signals/${id}/versions`, json('POST', version)),
+  removeSignal: (id: string) => request<void>(`/api/signals/${id}`, { method: 'DELETE' }),
+
+  touch: (id: string) => request<Touch>(`/api/touches/${id}`),
+  addTouch: (signal: string, touch: NewTouch) => request<Touch>(`/api/signals/${signal}/touches`, json('POST', touch)),
+  removeTouch: (id: string) => request<void>(`/api/touches/${id}`, { method: 'DELETE' }),
+  strategies: (touch: string) => request<Strategy[]>(`/api/touches/${touch}/strategies`),
+  saveStrategies: (touch: string, strategies: StrategyText[]) => request<Strategy[]>(`/api/touches/${touch}/strategies`, json('PUT', strategies)),
+
+  // the study of a signal or a touch; null while nothing has been saved
+  studyOf: (kind: SubjectKind, id: string) => request<Study | null>(`${home(kind, id)}/study`),
+  saveStudyOf: (kind: SubjectKind, id: string, content: StudyContent) => request<Study>(`${home(kind, id)}/study`, json('PUT', content)),
 };

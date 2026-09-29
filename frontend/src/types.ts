@@ -42,6 +42,8 @@ export interface DrawingState {
   id: string;
   name: string;
   points: PointState[];
+  /** The symbol the drawing belongs to; it shows on every pane of that symbol. */
+  symbol: string | null;
   /** The timeframe the drawing was made or last changed on. */
   timeframe: string | null;
   styles: Record<string, unknown> | null;
@@ -66,21 +68,42 @@ export interface ViewState {
   rightTimestamp: number | null;
 }
 
-export interface StudyContent {
+/** One chart of a study. */
+export interface PaneState {
   symbol: string;
   timeframe: string;
+  indicators: IndicatorState[];
+  view: ViewState;
+}
+
+export interface LayoutState {
+  columns: number;
+  rows: number;
+}
+
+export type SubjectKind = 'signal' | 'touch';
+
+export interface Subject {
+  kind: SubjectKind;
+  id: string;
+}
+
+export interface StudyContent {
+  symbol: string;
+  /** The moment the study is about. */
   focus: number | null;
   tag: string;
   comment: string;
   drawings: DrawingState[];
-  indicators: IndicatorState[];
-  view: ViewState;
+  panes: PaneState[];
+  layout: LayoutState;
   timezone: string;
   screenshot?: string | null;
 }
 
 export interface Study extends StudyContent {
   id: string;
+  subject: Subject | null;
   created: string;
   updated: string;
   hasScreenshot: boolean;
@@ -90,7 +113,7 @@ export interface Study extends StudyContent {
 export interface StudySummary {
   id: string;
   symbol: string;
-  timeframe: string;
+  timeframes: string[];
   focus: number | null;
   tag: string;
   excerpt: string;
@@ -98,4 +121,127 @@ export interface StudySummary {
   created: string;
   updated: string;
   hasScreenshot: boolean;
+}
+
+// -- signals, touches, strategies ------------------------------------------------
+
+export type Shape = 'point' | 'level' | 'segment' | 'box';
+export type Basis = 'model' | 'partial' | 'feeling' | 'unset';
+export type Status = 'confirmed' | 'candidate' | 'rejected';
+export type Reason = 'initial' | 'market' | 'review';
+
+export interface Anchor {
+  timestamp: number;
+  value: number;
+}
+
+/** What a signal looks like on the chart. */
+export interface Definition {
+  shape: Shape;
+  anchors: Anchor[];
+  /** The timeframe the shape was set on. */
+  timeframe: string;
+  /** When the signal could first be known; often later than its anchors. */
+  knownAt: number | null;
+}
+
+export interface SignalVersion extends Definition {
+  version: number;
+  reason: Reason;
+  note: string;
+  created: string;
+}
+
+export interface Relation {
+  kind: 'continues' | 'replaces' | 'related';
+  target: string;
+}
+
+/** What the study of a signal or a touch says, for lists and markers. */
+export interface Noted {
+  tag: string;
+  comment: string;
+  studied: boolean;
+  updated: string | null;
+}
+
+export interface Touch {
+  id: string;
+  signalId: string;
+  /** The version of the signal that was valid at the touch. */
+  signalVersion: number;
+  symbol: string;
+  timestamp: number;
+  value: number;
+  timeframe: string;
+  rule: string;
+  origin: string;
+  created: string;
+  updated: string;
+  note: Noted;
+  /** How many strategies are written down for the touch. */
+  strategies: number;
+}
+
+export interface Signal {
+  id: string;
+  symbol: string;
+  status: Status;
+  origin: string;
+  models: string[];
+  /** How well the user can say why this is a signal. */
+  basis: Basis;
+  versions: SignalVersion[];
+  relations: Relation[];
+  created: string;
+  updated: string;
+  note: Noted;
+  touches: Touch[];
+}
+
+export interface NewSignal extends Omit<Definition, 'knownAt'> {
+  symbol: string;
+  knownAt?: number | null;
+  models?: string[];
+  basis?: Basis;
+  origin?: string;
+  status?: Status;
+}
+
+export interface NewVersion extends Definition {
+  reason: 'market' | 'review';
+  note: string;
+}
+
+export interface SignalChanges {
+  models?: string[];
+  basis?: Basis;
+  status?: Status;
+  relations?: Relation[];
+  knownAt?: number | null;
+  clearKnownAt?: boolean;
+}
+
+export interface NewTouch {
+  timestamp: number;
+  value: number;
+  timeframe: string;
+  rule?: string;
+  origin?: string;
+  signalVersion?: number | null;
+}
+
+/** What to do at a touch. A touch can hold several, side by side. */
+export interface Strategy {
+  id: string;
+  label: string;
+  text: string;
+  created: string;
+  updated: string;
+}
+
+export interface StrategyText {
+  id?: string | null;
+  label: string;
+  text: string;
 }

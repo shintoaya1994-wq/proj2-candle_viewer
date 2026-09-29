@@ -18,7 +18,8 @@ export interface Anchor {
 export interface LoaderOptions {
   series(): Series;
   anchor(): Anchor;
-  onLoaded(first: boolean): void;
+  /** Bars have arrived. `latest` tells whether the chart now holds the bars up to the end of the data. */
+  onLoaded(first: boolean, latest: boolean): void;
   onError(error: unknown): void;
 }
 
@@ -47,6 +48,7 @@ function toBars(response: BarsResponse): KLineData[] {
  */
 export function createLoader(options: LoaderOptions): DataLoader {
   let generation = 0;
+  let latest = false;
   return {
     getBars: async ({ type, timestamp, callback }) => {
       if (type === 'update') return;
@@ -70,10 +72,11 @@ export function createLoader(options: LoaderOptions): DataLoader {
         const response = await api.bars(query);
         if (mine !== generation) return; // another series was chosen while this one travelled
         const bars = toBars(response);
+        if (type !== 'forward') latest = !response.newer;
         if (first) callback(bars, { forward: response.older, backward: response.newer });
         else if (type === 'forward') callback(bars, { forward: response.older });
         else callback(bars, { backward: response.newer });
-        options.onLoaded(first);
+        options.onLoaded(first, latest);
       } catch (error) {
         if (mine !== generation) return;
         callback([], false);
