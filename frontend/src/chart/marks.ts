@@ -77,7 +77,7 @@ interface Drawn {
   figures: OverlayFigure[];
   /** Where the label goes. */
   labelAt: Coordinate;
-  /** Where the dots of the touches hang: the x of their bar, and the lowest point of the shape there. */
+  /** Where the dots of the touches hang: the bar where the shape begins, and the lowest point of the shape there. */
   below: Coordinate;
 }
 
@@ -125,7 +125,7 @@ function shapeOf(mark: SignalMark, coordinates: Coordinate[], held: boolean[], w
     else if (a.y === b.y && (held[0] || held[1])) figures.push(line({ x: Math.min(a.x, b.x), y: a.y }, { x: Math.max(a.x, b.x), y: a.y }, color, mark, ignore));
     else return null;
     const left = a.x <= b.x ? a : b;
-    return { figures, labelAt: { x: Math.max(left.x, 0) + 4, y: left.y - 6 }, below: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+    return { figures, labelAt: { x: Math.max(left.x, 0) + 4, y: left.y - 6 }, below: { x: left.x, y: left.y } };
   }
   if (!held[0] && !held[1]) return null;
   const x = Math.min(a.x, b.x);
@@ -146,7 +146,7 @@ function shapeOf(mark: SignalMark, coordinates: Coordinate[], held: boolean[], w
     styles: { color, size: mark.selected ? 2.5 : 1.5, style: mark.status === 'candidate' ? 'dashed' : 'solid', dashedValue: [6, 4] },
     ignoreEvent: ignore,
   });
-  return { figures, labelAt: { x: Math.max(x, 0) + 3, y: y - 5 }, below: { x: (x + right) / 2, y: bottom } };
+  return { figures, labelAt: { x: Math.max(x, 0) + 3, y: y - 5 }, below: { x, y: bottom } };
 }
 
 /** Where a label begins so that all of it is on the chart. */

@@ -1,6 +1,6 @@
 import { BASES, REASONS, STATUSES, describe, moment, stamped } from '../format';
 import type { StudyKind } from '../route';
-import type { Basis, Signal, Status, StrategyText, Touch } from '../types';
+import type { Basis, Signal, Status, StrategyText, Study, Touch } from '../types';
 
 /** What is said about a signal apart from its shape, as the user edits it. */
 export interface Facts {
@@ -17,6 +17,8 @@ interface Props {
   tag: string;
   comment: string;
   signal: Signal | null;
+  /** The study of the signal, in the window of a touch. */
+  signalStudy: Study | null;
   touch: Touch | null;
   facts: Facts | null;
   /** Whether the shape of the signal on the charts differs from the one that is stored. */
@@ -26,6 +28,7 @@ interface Props {
   onComment(value: string): void;
   onFacts(facts: Facts): void;
   onRestoreShape(): void;
+  onOpenSignal(): void;
   onStrategies(strategies: StrategyText[]): void;
 }
 
@@ -34,7 +37,7 @@ const STATUS_ORDER: Status[] = ['confirmed', 'candidate', 'rejected'];
 
 /** Quick tag and comment of a study, and what belongs to the signal or the touch it is about. */
 export function StudyPanel(props: Props) {
-  const { kind, signal, touch, facts, strategies } = props;
+  const { kind, signal, signalStudy, touch, facts, strategies } = props;
   const change = (index: number, changes: Partial<StrategyText>) => props.onStrategies(strategies.map((item, position) => (position === index ? { ...item, ...changes } : item)));
 
   return (
@@ -51,6 +54,18 @@ export function StudyPanel(props: Props) {
             {kind === 'touch' ? `触及的信号：${signal.note.tag || '（无快评）'}　` : ''}
             {describe(signal.versions[signal.versions.length - 1] ?? { shape: 'point', anchors: [], timeframe: 'd1' })}
           </span>
+          {kind === 'touch' && (
+            <>
+              {signal.models.length > 0 && <span>模型：{signal.models.join('、')}</span>}
+              {signalStudy?.comment && <p className="comment" data-testid="signal-comment">{signalStudy.comment}</p>}
+              <span className="dim">{signalStudy ? `信号研究里的 ${signalStudy.drawings.length} 个标注以虚线显示在各窗格里。` : '信号还没有研究记录。'}</span>
+              <div className="actions start">
+                <button type="button" className="plain" data-testid="open-signal" onClick={props.onOpenSignal}>
+                  打开信号的研究窗口
+                </button>
+              </div>
+            </>
+          )}
         </section>
       )}
 

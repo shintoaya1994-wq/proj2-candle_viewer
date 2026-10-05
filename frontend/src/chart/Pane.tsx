@@ -4,7 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { barStart, timeframe as timeframeInfo } from '../timeframes';
 import type { Anchor, DrawingData, DrawingState, IndicatorState, SymbolInfo, ViewState } from '../types';
 import type { DrawingBoard } from './board';
-import { DRAWING_GROUP, WITH_TEXT, magnetMode, newDrawing, overlayOf, registerDrawings, stateOf } from './drawings';
+import { DRAWING_GROUP, REFERENCE_GROUP, WITH_TEXT, magnetMode, newDrawing, overlayOf, referenceOf, registerDrawings, stateOf } from './drawings';
 import { applyIndicators, CANDLE_PANE } from './indicators';
 import { createLoader } from './loader';
 import { MARK_GROUP, anchorsOf, earliestMark, hitOf, markOf, overlayId, overlayOfMark, registerMarks, type Mark, type MarkHit, type SignalMark } from './marks';
@@ -75,6 +75,8 @@ interface Props {
   timezone: string;
   indicators: IndicatorState[];
   board: DrawingBoard;
+  /** Drawings of another study, shown for reference. */
+  reference?: DrawingState[];
   start: PaneStart;
   /** Changes when the chart has to start anew. */
   startKey: string;
@@ -236,6 +238,15 @@ export const Pane = forwardRef<PaneHandle, Props>(function Pane(props, ref) {
     chart.createOverlay({ ...overlayOf(state, timeframe, bars.current, magnet), ...drawingHandlers });
   }
 
+  /** Makes the chart show the reference drawings it is given, and no others. */
+  function showReference(chart: Chart) {
+    const { reference = [], symbol, timeframe } = latest.current;
+    quietly(() => chart.removeOverlay({ groupId: REFERENCE_GROUP }));
+    for (const state of reference) {
+      if (state.symbol === null || state.symbol === symbol.name) chart.createOverlay(referenceOf(state, timeframe, bars.current));
+    }
+  }
+
   /** Makes the chart show the marks it is given, and no others. */
   function showMarks(chart: Chart) {
     const { marks, timeframe } = latest.current;
@@ -360,6 +371,7 @@ export const Pane = forwardRef<PaneHandle, Props>(function Pane(props, ref) {
     });
     shown.current = new Set();
     drawing.current = null;
+    showReference(chart);
     for (const state of board.of(symbol.name)) show(chart, state);
     showMarks(chart);
     placeView(chart);
@@ -374,6 +386,7 @@ export const Pane = forwardRef<PaneHandle, Props>(function Pane(props, ref) {
     for (const state of board.of(symbol.name)) {
       if (state.id !== drawing.current) chart.overrideOverlay({ id: state.id, points: displayPoints(state.points, state.timeframe, timeframe, bars.current) });
     }
+    showReference(chart);
     showMarks(chart);
   }
 
@@ -492,6 +505,12 @@ export const Pane = forwardRef<PaneHandle, Props>(function Pane(props, ref) {
     if (chart && loaded.current) showMarks(chart);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.marks, props.startKey]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (chart && loaded.current) showReference(chart);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.reference, props.startKey]);
 
   useEffect(() => {
     const chart = chartRef.current;

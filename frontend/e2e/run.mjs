@@ -353,6 +353,9 @@ try {
   await type(study, 'models', '模型甲，模型乙');
   await study.click(test('basis-partial'));
   await pick(study, 'known-at', '2024-02-20T08:00');
+  await study.click(test('indicators-pane-0'));
+  await study.click(test('indicators-pane-0-MA'));
+  await study.click(test('indicators-pane-0'));
   const left = {};
   for (const pane of await paneKeys(study)) left[pane] = { view: (await ask(study, pane, 'snapshot')).view, line: await ask(study, pane, 'pixelsOf', line.id), level: await ask(study, pane, 'pixelsOf', level.id) };
   const drawn = await drawings(study);
@@ -368,6 +371,7 @@ try {
   assert.deepEqual(stored.layout, { columns: 3, rows: 2 });
   assert.deepEqual(stored.panes.map((pane) => pane.timeframe), timeframes);
   assert.ok(stored.panes.every((pane) => pane.symbol === 'testfx' && Number.isInteger(pane.view.rightTimestamp)));
+  assert.deepEqual(stored.panes[0].indicators.map((indicator) => indicator.name), ['MA']);
   assert.deepEqual(stored.drawings.map(anchors), drawn.map(anchors));
   assert.equal(stored.focus, peakBar.timestamp);
   isPng(path.join(peakFolder, 'screenshot.png'));
@@ -409,6 +413,16 @@ try {
   assert.ok(fs.existsSync(path.join(peakFolder, 'touches', touch.id, 'touch.json')));
   await picture(page, 'touch-added');
 
+  step('the dots of a box hang below the bar where the box begins');
+  const boxTouch = await fetch(`${origin}/api/signals/${range.id}/touches`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ timestamp: touchBar.timestamp, value: touchBar.low, timeframe: 'd1' }) }).then((response) => response.json());
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await waitFor('the touch of the box', async () => (await signals(page)).find((signal) => signal.id === range.id)?.touches.length === 1);
+  await sleep(400);
+  const edges = await ask(page, 'main', 'pixelsOf', markOf(range));
+  const boxDot = (await ask(page, 'main', 'figuresOf', markOf(range)))[`touch:${boxTouch.id}`];
+  near(boxDot.x, Math.min(edges[0].x, edges[1].x), 1.5, 'the dot is below the left edge of the box');
+  assert.ok(boxDot.y > Math.max(edges[0].y, edges[1].y), 'the dot is below the box');
+
   step('a click on the dot opens the touch in a window centred on it');
   study = await opening(page, () => click(page, 'main', dot.x, dot.y));
   assert.equal(await study.$eval(test('study-window'), (element) => element.dataset.kind), 'touch');
@@ -423,6 +437,17 @@ try {
     assert.ok(Number.isFinite(signalAt.x) && Number.isFinite(signalAt.y), `the signal has a place on ${timeframe}`);
   }
   await picture(study, 'touch-window');
+
+  step('the window of a touch shows the drawings of the study of its signal, and starts with its indicators');
+  assert.deepEqual(await drawings(study), [], 'the drawings of the signal are not drawings of the touch');
+  for (const pane of await paneKeys(study)) {
+    for (const id of [line.id, level.id]) {
+      const shown = await ask(study, pane, 'pixelsOf', `reference:${id}`);
+      assert.ok(shown.length === 2 && shown.every((pixel) => Number.isFinite(pixel.x) && Number.isFinite(pixel.y)), `the drawing ${id} of the signal shows on ${pane}`);
+    }
+  }
+  assert.equal(await text(study, 'indicators-pane-0'), '指标（1）');
+  assert.ok((await text(study, 'signal-comment')).includes('用模型甲能解释一半。'));
 
   step('strategies are written side by side and saved with the touch');
   await study.click(test('strategy-add'));

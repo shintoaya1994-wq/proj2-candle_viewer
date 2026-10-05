@@ -38,6 +38,8 @@ export interface PointState {
 export interface DrawingData {
   text?: string;
   color?: string;
+  /** Set on a drawing shown for reference, so that it looks the part. Not stored. */
+  reference?: boolean;
 }
 
 export interface DrawingState {

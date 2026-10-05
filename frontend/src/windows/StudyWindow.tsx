@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '../api';
-import { announce } from '../channel';
+import { announce, listen } from '../channel';
 import { DrawingBoard } from '../chart/board';
 import { DEFAULT_COLOR, TOOLS, stylesFor } from '../chart/drawings';
 import { overlayId, type Mark, type MarkHit } from '../chart/marks';
@@ -43,6 +43,8 @@ interface Subject {
   symbol: string;
   signal: Signal | null;
   touch: Touch | null;
+  /** The study of the signal, in a window about one of its touches: what was found out about the signal applies to every touch. */
+  signalStudy: Study | null;
   /** Id of a study that stands on its own; null while it has not been saved. */
   study: string | null;
   /** Changes whenever the subject is read anew, so that the charts start anew. */
@@ -121,12 +123,13 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
       let signal: Signal | null = null;
       let touch: Touch | null = null;
       let study: Study | null = null;
+      let signalStudy: Study | null = null;
       let plans: StrategyText[] = [];
       if (route.kind === 'signal') {
         [signal, study] = await Promise.all([api.signal(route.id), api.studyOf('signal', route.id)]);
       } else if (route.kind === 'touch') {
         touch = await api.touch(route.id);
-        [signal, study, plans] = await Promise.all([api.signal(touch.signalId), api.studyOf('touch', route.id), api.strategies(route.id)]);
+        [signal, study, signalStudy, plans] = await Promise.all([api.signal(touch.signalId), api.studyOf('touch', route.id), api.studyOf('signal', touch.signalId), api.strategies(route.id)]);
       } else if (route.id !== null) {
         study = await api.study(route.id);
       }
@@ -144,18 +147,22 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
       const key = `read-${++reads}`;
       // A window opens around what it is about: the touch, or else the signal.
       const around = touch ? overlayId({ kind: 'touch', id: touch.id }) : signal ? overlayId({ kind: 'signal', id: signal.id }) : null;
+      // The study of a touch that is new starts with the charts and indicators of the study of its signal.
+      const pattern = study ?? signalStudy;
       const setups: PaneSetup[] = study
         ? study.panes.map((pane, index) => ({ key: `pane-${index}`, symbol: pane.symbol, timeframe: pane.timeframe, indicators: pane.indicators, start: { view: pane.view, focus: about, mark: around } }))
-        : STUDY_TIMEFRAMES.filter((name) => available.has(name)).map((name, index) => ({ key: `pane-${index}`, symbol, timeframe: name, indicators: [], start: freshStart(about, around) }));
+        : signalStudy
+          ? signalStudy.panes.map((pane, index) => ({ key: `pane-${index}`, symbol: pane.symbol, timeframe: pane.timeframe, indicators: pane.indicators, start: freshStart(about, around) }))
+          : STUDY_TIMEFRAMES.filter((name) => available.has(name)).map((name, index) => ({ key: `pane-${index}`, symbol, timeframe: name, indicators: [], start: freshStart(about, around) }));
 
       // A study that is new shows times and takes clicks the way the main window does.
       const usual = remembered({ symbol: null, timeframe: 'd1', timezone: 'UTC', indicators: [], magnet: true });
       board.reset(study?.drawings ?? []);
       handles.current.clear();
       setPanes(setups);
-      setLayout(study?.layout ?? DEFAULT_LAYOUT);
+      setLayout(pattern?.layout ?? DEFAULT_LAYOUT);
       setMaximized(null);
-      setTimezone(study?.timezone ?? usual.timezone);
+      setTimezone(pattern?.timezone ?? usual.timezone);
       setMagnet(usual.magnet);
       setFocus(about);
       setTag(study?.tag ?? '');
@@ -167,7 +174,7 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
       setTool(null);
       setDirty(false);
       setBars({});
-      setSubject({ meta, symbol, signal, touch, study: study && route.kind === 'free' ? study.id : null, key });
+      setSubject({ meta, symbol, signal, touch, signalStudy, study: study && route.kind === 'free' ? study.id : null, key });
       setStatus('');
     };
     read().catch(fail('打开'));
@@ -182,6 +189,18 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
     if (!subject) return;
     document.title = `${subject.symbol.toUpperCase()} · ${tag.trim() || KINDS[route.kind]} · K 线研究`;
   }, [subject, tag, route.kind]);
+
+  // What is saved about the signal in another window shows here at once.
+  useEffect(() => {
+    const signalId = subject?.touch?.signalId;
+    if (route.kind !== 'touch' || !signalId) return;
+    return listen((notice) => {
+      if (notice.kind !== 'signal' || notice.id !== signalId) return;
+      Promise.all([api.signal(signalId), api.studyOf('signal', signalId)])
+        .then(([signal, signalStudy]) => setSubject((before) => (before ? { ...before, signal, signalStudy } : before)))
+        .catch(() => undefined);
+    });
+  }, [route.kind, subject?.touch?.signalId]);
 
   useEffect(() => {
     window.candleViewer = {
@@ -231,6 +250,9 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
     if (touch) shown.push({ kind: 'touch', id: touch.id, timestamp: touch.timestamp, value: touch.value, madeOn: touch.timeframe, tag: tag.trim(), selected: false });
     return shown;
   }, [subject, shape, tag, facts?.status, route.kind]);
+
+  /** The drawings of the study of the signal, shown for reference in the window of a touch. */
+  const reference = useMemo<DrawingState[]>(() => (route.kind === 'touch' ? (subject?.signalStudy?.drawings ?? []) : []), [route.kind, subject?.signalStudy]);
 
   const collect = useCallback(async (): Promise<StudyContent | null> => {
     if (!subject) return null;
@@ -484,6 +506,7 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
                     timezone={timezone}
                     indicators={pane.indicators}
                     board={board}
+                    reference={reference}
                     start={pane.start}
                     startKey={`${subject.key}-${pane.key}`}
                     marks={pane.symbol === subject.symbol ? marks : NO_MARKS}
@@ -509,7 +532,17 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
             })}
           </div>
           <footer className="status" data-testid="status">
-            <span>{hint ? `${hint}　在任意一个窗格里画，其余窗格同步显示　按 Esc 取消` : selection ? '已选中一个标注：可拖动、改颜色、按 Delete 删除；双击方框或文字可改字' : route.kind === 'signal' ? '紫色的是信号本身：拖动它或它的端点可以修改形状' : ''}</span>
+            <span>
+              {hint
+                ? `${hint}　在任意一个窗格里画，其余窗格同步显示　按 Esc 取消`
+                : selection
+                  ? '已选中一个标注：可拖动、改颜色、按 Delete 删除；双击方框或文字可改字'
+                  : route.kind === 'signal'
+                    ? '紫色的是信号本身：拖动它或它的端点可以修改形状'
+                    : reference.length > 0
+                      ? '虚线的标注来自信号的研究，每次触及都能看到；要改它们请打开信号的研究窗口'
+                      : ''}
+            </span>
             <span className="dim">已载入 {total.toLocaleString()} 根 K 线</span>
             <span data-testid="message">{status}</span>
           </footer>
@@ -519,6 +552,7 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
           tag={tag}
           comment={comment}
           signal={subject.signal}
+          signalStudy={subject.signalStudy}
           touch={subject.touch}
           facts={facts}
           moved={shape?.moved ?? false}
@@ -536,6 +570,9 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
             setDirty(true);
           }}
           onRestoreShape={restoreShape}
+          onOpenSignal={() => {
+            if (subject.signal && !openStudy({ window: 'study', kind: 'signal', id: subject.signal.id })) setStatus('浏览器拦截了新窗口。请允许本页面弹出窗口。');
+          }}
           onStrategies={(value) => {
             setStrategies(value);
             setDirty(true);

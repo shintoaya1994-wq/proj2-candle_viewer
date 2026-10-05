@@ -4,6 +4,8 @@ import type { DrawingData, DrawingState } from '../types';
 import { displayPoints, type Bars } from './placement';
 
 export const DRAWING_GROUP = 'drawing';
+/** Drawings of another study, shown for reference; they cannot be changed here. */
+export const REFERENCE_GROUP = 'reference';
 
 export const COLORS = [
   { value: '#e11d48', label: '红' },
@@ -75,14 +77,14 @@ export function registerDrawings(): void {
     createPointFigures: ({ coordinates, overlay }) => {
       const [a, b] = coordinates;
       if (!a || !b) return [];
-      const { color = DEFAULT_COLOR, text } = dataOf(overlay);
+      const { color = DEFAULT_COLOR, text, reference = false } = dataOf(overlay);
       const x = Math.min(a.x, b.x);
       const y = Math.min(a.y, b.y);
       const figures: OverlayFigure[] = [
         {
           type: 'rect',
           attrs: { x, y, width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) },
-          styles: { style: 'stroke_fill', color: hex(color, 0.1), borderColor: color, borderSize: 1 },
+          styles: { style: 'stroke_fill', color: hex(color, reference ? 0.06 : 0.1), borderColor: color, borderSize: 1, borderStyle: reference ? 'dashed' : 'solid', borderDashedValue: [6, 4] },
         },
       ];
       if (text) figures.push({ ...label(text, x + 3, y + 3, color, 'top'), ignoreEvent: true });
@@ -169,6 +171,7 @@ export function newDrawing(name: string, color: string, symbol: string): Drawing
 
 /** The state of a drawing as the chart holds it now. */
 export function stateOf(overlay: Overlay<unknown>, timeframe: string, symbol: string): DrawingState {
+  const { reference: _reference, ...data } = dataOf(overlay);
   return {
     id: overlay.id,
     name: overlay.name,
@@ -176,7 +179,7 @@ export function stateOf(overlay: Overlay<unknown>, timeframe: string, symbol: st
     symbol,
     timeframe,
     styles: (overlay.styles as Record<string, unknown> | null) ?? null,
-    extendData: dataOf(overlay),
+    extendData: data,
     lock: overlay.lock,
     visible: overlay.visible,
     zLevel: overlay.zLevel,
@@ -200,5 +203,16 @@ export function overlayOf(state: DrawingState, timeframe: string, bars: Bars, ma
   };
   if (state.points.length > 0) create.points = displayPoints(state.points, state.timeframe, timeframe, bars);
   if (state.styles) create.styles = state.styles;
+  return create;
+}
+
+/** What to hand to the chart to show a drawing of another study: it cannot be moved, and its lines are dashed. */
+export function referenceOf(state: DrawingState, timeframe: string, bars: Bars): OverlayCreate {
+  const create = overlayOf(state, timeframe, bars, false);
+  create.id = `reference:${state.id}`;
+  create.groupId = REFERENCE_GROUP;
+  create.lock = true;
+  create.extendData = { ...(create.extendData as DrawingData), reference: true };
+  if (state.styles) create.styles = { ...state.styles, line: { ...(state.styles.line as object), style: 'dashed', dashedValue: [6, 4] } };
   return create;
 }
