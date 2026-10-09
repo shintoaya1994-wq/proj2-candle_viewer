@@ -42,6 +42,7 @@ export function Hover({ hit, at, signals }: Props) {
           </span>
           {signal.models.length > 0 && <span>模型：{signal.models.join('、')}</span>}
           {signal.basis !== 'unset' && <span>{BASES[signal.basis]}</span>}
+          {version?.note && <p>{version.note}</p>}
           {signal.note.comment && <p>{signal.note.comment}</p>}
           <span className="dim">
             {signal.touches.length > 0 ? `触及 ${signal.touches.length} 次　` : ''}点击打开研究窗口，右键有更多操作

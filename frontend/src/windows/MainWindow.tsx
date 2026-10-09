@@ -10,12 +10,14 @@ import { Magnet } from '../components/DrawingTools';
 import { Hover } from '../components/Hover';
 import { IndicatorMenu } from '../components/IndicatorMenu';
 import { Menu, type MenuItem } from '../components/Menu';
+import { ScreenMenu } from '../components/ScreenMenu';
 import { SignalPanel, matches } from '../components/SignalPanel';
 import { describe, moment } from '../format';
+import { moment as when } from '../format';
 import { openStudy, type StudyRoute } from '../route';
 import { remember, remembered, type Settings } from '../settings';
 import { TIMEFRAMES } from '../timeframes';
-import type { DrawingState, Meta, Shape, Signal, StudySummary } from '../types';
+import type { DrawingState, Meta, ScreenInfo, Shape, Signal, Status, StudySummary } from '../types';
 import { TIMEZONES } from './timezones';
 
 /** A way to mark a signal on the chart by hand. */
@@ -53,6 +55,9 @@ export function MainWindow() {
   const [hover, setHover] = useState<{ hit: MarkHit; at: Place } | null>(null);
   const [menu, setMenu] = useState<{ hit: MarkHit; at: Place } | null>(null);
   const [filter, setFilter] = useState('');
+  const [hideRejected, setHideRejected] = useState(true);
+  const [screens, setScreens] = useState<ScreenInfo[]>([]);
+  const [screening, setScreening] = useState<string | null>(null);
   const [status, setStatus] = useState('正在读取数据…');
   const [bars, setBars] = useState(0);
   const board = useMemo(() => new DrawingBoard(), []);
@@ -86,6 +91,8 @@ export function MainWindow() {
 
   useEffect(() => {
     document.title = 'K 线研究工作台';
+    api.screens().then(setScreens).catch(fail('读取筛选脚本'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // The signals of the symbol; read again whenever another window has saved something.
@@ -113,7 +120,7 @@ export function MainWindow() {
     };
   }, [signals]);
 
-  const shown = useMemo(() => signals.filter((signal) => matches(signal, filter)), [signals, filter]);
+  const shown = useMemo(() => signals.filter((signal) => matches(signal, filter) && !(hideRejected && signal.status === 'rejected')), [signals, filter, hideRejected]);
 
   const marks = useMemo<Mark[]>(() => {
     const made: Mark[] = [];
@@ -216,6 +223,47 @@ export function MainWindow() {
       .catch(fail('删除'));
   };
 
+  const setStatus_ = (id: string, status: Status) => {
+    if (!symbol) return;
+    api
+      .changeSignal(id, { status })
+      .then(() => reload(symbol.name))
+      .catch(fail('修改状态'));
+  };
+
+  const runScreen = (screen: ScreenInfo) => {
+    if (!symbol) return;
+    setScreening(screen.name);
+    setStatus(`正在运行 ${screen.name}…`);
+    api
+      .runScreen(screen.name, symbol.name)
+      .then(async (outcome) => {
+        await reload(symbol.name);
+        setStatus(`${screen.name}：找到 ${outcome.found} 个，新增 ${outcome.created.length} 个候选信号，${outcome.known} 个已有。候选信号画成虚线；在右侧确认或否定。`);
+      })
+      .catch(fail('运行筛选'))
+      .finally(() => setScreening(null));
+  };
+
+  const checkScreen = (screen: ScreenInfo) => {
+    if (!symbol) return;
+    setScreening(screen.name);
+    setStatus(`正在检查 ${screen.name} 有没有偷看未来…`);
+    api
+      .checkScreen(screen.name, symbol.name)
+      .then((report) => {
+        const early = report.differences.filter((item) => item.kind === 'early' || item.kind === 'moved');
+        const first = early[0];
+        setStatus(
+          report.passed
+            ? `${screen.name}：通过。找到 ${report.found} 个，在 ${report.cutoffs} 个截断点上重跑，结果一致。`
+            : `${screen.name}：没有通过，它偷看了未来。例如 ${first?.key ?? ''}：${first?.detail ?? ''}（共 ${early.length} 处，截断到 ${first ? when(first.cutoff) : ''}）`,
+        );
+      })
+      .catch(fail('检查筛选'))
+      .finally(() => setScreening(null));
+  };
+
   const removeStudy = (id: string) => {
     const study = studies.find((item) => item.id === id);
     if (!symbol || !window.confirm(`删除记录“${study?.tag || id}”？它会被移到回收文件夹，不会被销毁。`)) return;
@@ -306,6 +354,7 @@ export function MainWindow() {
         </div>
 
         <div className="group">
+          <ScreenMenu screens={screens} busy={screening} onRun={runScreen} onCheck={checkScreen} />
           <IndicatorMenu value={settings.indicators} onChange={(indicators) => alter({ indicators })} />
           <select value={settings.timezone} data-testid="timezone" title="图上显示的时间" onChange={(event) => alter({ timezone: event.target.value })}>
             {TIMEZONES.map((item) => (
@@ -359,8 +408,12 @@ export function MainWindow() {
           total={signals.length}
           chosen={chosen}
           filter={filter}
+          hideRejected={hideRejected}
+          rejected={signals.filter((signal) => signal.status === 'rejected').length}
           studies={studies}
           onFilter={setFilter}
+          onHideRejected={setHideRejected}
+          onStatus={setStatus_}
           onChoose={choose}
           onOpen={(id) => open({ window: 'study', kind: 'signal', id })}
           onAddTouch={(id) => setTask({ kind: 'touch', signal: id })}

@@ -169,6 +169,59 @@ button.primary {
   box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
 }
 
+.popover.wide {
+  width: 420px;
+}
+
+.screen {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.screen:first-child {
+  border-top: 0;
+}
+
+.screen-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.screen-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.badge {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: normal;
+}
+
+.badge.candidate {
+  background: #fff1d6;
+  color: #92400e;
+}
+
+.badge.rejected {
+  background: #e5e7eb;
+  color: #4b5563;
+}
+
+.choice.small {
+  margin: 0 0 6px;
+  color: var(--dim);
+}
+
 .indicator {
   display: grid;
   grid-template-columns: 18px 1fr 110px;

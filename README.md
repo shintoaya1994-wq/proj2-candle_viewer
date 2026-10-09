@@ -22,7 +22,13 @@
 - 触及的窗口里以虚线显示信号研究里的全部标注，并沿用它的窗格和指标设置：关键点位只需在信号的研究里画一次
 - “编辑完成”保存截图、窗口布局、评论和快评，并关闭窗口
 
-信号、信号的触及、触及后的策略是三种分开的记录。信号筛选脚本和 AI 对话属于后续阶段；目前信号由手工标记。
+**筛选脚本**
+
+- 工作区 `screens/` 里的 Python 脚本自动在行情里找信号，找到的作为候选信号（虚线）出现，由您确认或否定
+- “检查”把数据截断后重跑脚本，看它声称的“可知时刻”有没有偷看未来
+- 写法见 [docs/screens.md](docs/screens.md)
+
+信号、信号的触及、触及后的策略是三种分开的记录。
 
 ## 环境
 
@@ -84,6 +90,10 @@ uv run candle-data rebuild --source ~/candle_workspace/raw/dukascopy
 
 # 校验重构结果：逐级重新聚合并逐根比对
 uv run candle-data check
+
+# 筛选脚本：运行、检查（见 docs/screens.md）
+uv run candle-screen run my_screen --symbols eurusd
+uv run candle-screen check my_screen --symbols eurusd
 
 # 可选：服务器的分钟线有缺失时，用逐笔数据补上，然后再重构一次
 node tools/dukascopy/repair.mjs --symbols eurusd

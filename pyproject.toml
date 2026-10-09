@@ -14,6 +14,7 @@ dependencies = [
 [project.scripts]
 candle-data = "candle_viewer.market.cli:main"
 candle-viewer = "candle_viewer.app.cli:main"
+candle-screen = "candle_viewer.screen.cli:main"
 
 [dependency-groups]
 dev = ["httpx2", "pytest>=8"]

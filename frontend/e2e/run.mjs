@@ -75,6 +75,9 @@ const oldStudy = {
   updated: '2024-03-01T10:15:00Z',
   schemaVersion: 1,
 };
+// A screen of the user's own: the shipped one with a smaller window, under another name.
+fs.mkdirSync(path.join(workspace, 'screens'), { recursive: true });
+fs.writeFileSync(path.join(workspace, 'screens', 'example.py'), "from candle_viewer.screens.local_extremes import run\nNAME = 'example'\nTITLE = '例子'\nPARAMS = {'timeframe': 'd1', 'window': 6}\n");
 fs.mkdirSync(oldFolder, { recursive: true });
 fs.writeFileSync(path.join(oldFolder, 'study.json'), `${JSON.stringify(oldStudy, null, 1)}\n`);
 fs.writeFileSync(path.join(oldFolder, 'notes.md'), '第一版写下的评论');
@@ -599,6 +602,43 @@ try {
   assert.equal(await page.$eval(test('timeframe-h4'), (element) => element.className), 'on');
   await waitFor('the signals', async () => (await signals(page)).length === 2);
 
+  step('a screen is run; what it finds are candidate signals to confirm or reject');
+  await page.click(test('screens'));
+  await page.waitForSelector(test('screen-example'));
+  assert.ok((await text(page, 'screen-example')).includes('例子'));
+  await page.click(test('run-example'));
+  await waitFor('the screen to finish', async () => (await message(page)).includes('新增'));
+  const candidates = (await signals(page)).filter((signal) => signal.status === 'candidate');
+  assert.ok(candidates.length >= 2, `candidates: ${candidates.length}`);
+  assert.ok(candidates.every((signal) => signal.origin === 'example' && signal.key && signal.versions[0].note.includes('收盘价')));
+  assert.ok((await text(page, `signal-${candidates[0].id}`)).includes('候选'));
+  await page.click(`${test(`signal-${candidates[0].id}`)} .open`);
+  await page.waitForSelector(test('confirm-signal'));
+  assert.ok((await text(page, 'signal-note')).includes('收盘价'));
+  await page.click(test('confirm-signal'));
+  await waitFor('the signal to be confirmed', async () => (await signals(page)).find((signal) => signal.id === candidates[0].id)?.status === 'confirmed');
+  await page.click(`${test(`signal-${candidates[1].id}`)} .open`);
+  await page.waitForSelector(test('reject-signal'));
+  await page.click(test('reject-signal'));
+  await waitFor('the signal to be rejected', async () => (await signals(page)).find((signal) => signal.id === candidates[1].id)?.status === 'rejected');
+  assert.equal(await page.$(test(`signal-${candidates[1].id}`)), null, 'rejected signals are out of the list');
+  await page.click(test('hide-rejected'));
+  await page.waitForSelector(test(`signal-${candidates[1].id}`));
+  assert.ok((await text(page, `signal-${candidates[1].id}`)).includes('已否定'));
+  await page.click(test('hide-rejected'));
+
+  step('running the screen again adds nothing; the check finds no looking ahead');
+  await page.click(test('screens'));
+  await page.click(test('run-example'));
+  await waitFor('the second run', async () => (await message(page)).includes('新增 0 个'));
+  await page.click(test('screens'));
+  await page.click(test('check-example'));
+  await waitFor('the check', async () => (await message(page)).includes('通过'), 60000);
+  assert.ok(!(await message(page)).includes('没有通过'));
+  for (const candidate of candidates) await fetch(`${origin}/api/signals/${candidate.id}`, { method: 'DELETE' });
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await waitFor('the candidates to go', async () => (await signals(page)).length === 2);
+
   step('a deleted touch and a deleted signal go to trash folders');
   dialogs.length = 0;
   await page.click(`${test(`signal-${peak.id}`)} .open`);
@@ -609,7 +649,7 @@ try {
   await waitFor('the signal to go', async () => (await signals(page)).length === 1);
   assert.equal(dialogs.length, 2);
   assert.deepEqual(fs.readdirSync(signalsFolder), [range.id]);
-  assert.ok(fs.readdirSync(path.join(workspace, 'signals', '.trash'))[0].startsWith(peak.id));
+  assert.ok(fs.readdirSync(path.join(workspace, 'signals', '.trash')).some((name) => name.startsWith(peak.id)));
 
   assert.deepEqual(problems, [], 'the browser reported errors');
 } catch (error) {

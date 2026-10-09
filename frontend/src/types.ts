@@ -197,10 +197,36 @@ export interface Signal {
   basis: Basis;
   versions: SignalVersion[];
   relations: Relation[];
+  /** Names the finding among those of the screen that found it. */
+  key: string | null;
   created: string;
   updated: string;
   note: Noted;
   touches: Touch[];
+}
+
+/** A script that looks for signals. */
+export interface ScreenInfo {
+  name: string;
+  title: string;
+  params: Record<string, unknown>;
+  shipped: boolean;
+  source: string;
+}
+
+export interface ScreenOutcome {
+  found: number;
+  created: string[];
+  known: number;
+}
+
+export interface ScreenReport {
+  screen: string;
+  symbol: string;
+  found: number;
+  cutoffs: number;
+  passed: boolean;
+  differences: Array<{ cutoff: number; kind: string; key: string; detail: string }>;
 }
 
 export interface NewSignal extends Omit<Definition, 'knownAt'> {

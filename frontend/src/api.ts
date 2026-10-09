@@ -4,6 +4,9 @@ import type {
   NewSignal,
   NewTouch,
   NewVersion,
+  ScreenInfo,
+  ScreenOutcome,
+  ScreenReport,
   Signal,
   SignalChanges,
   Strategy,
@@ -89,6 +92,10 @@ export const api = {
   removeTouch: (id: string) => request<void>(`/api/touches/${id}`, { method: 'DELETE' }),
   strategies: (touch: string) => request<Strategy[]>(`/api/touches/${touch}/strategies`),
   saveStrategies: (touch: string, strategies: StrategyText[]) => request<Strategy[]>(`/api/touches/${touch}/strategies`, json('PUT', strategies)),
+
+  screens: () => request<ScreenInfo[]>('/api/screens'),
+  runScreen: (name: string, symbol: string, params: Record<string, unknown> = {}) => request<ScreenOutcome>(`/api/screens/${name}/run`, json('POST', { symbol, params })),
+  checkScreen: (name: string, symbol: string, params: Record<string, unknown> = {}) => request<ScreenReport>(`/api/screens/${name}/check`, json('POST', { symbol, params })),
 
   // the study of a signal or a touch; null while nothing has been saved
   studyOf: (kind: SubjectKind, id: string) => request<Study | null>(`${home(kind, id)}/study`),

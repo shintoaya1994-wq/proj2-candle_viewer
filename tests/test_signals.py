@@ -208,3 +208,40 @@ class TestStudiesOfSignals:
         client.put(f"/api/signals/{signal['id']}/study", json=content(comment="长" * 5000))
         assert len(client.get(f"/api/signals/{signal['id']}").json()["note"]["comment"]) == 4000
         assert len(client.get(f"/api/signals/{signal['id']}/study").json()["comment"]) == 5000
+
+
+class TestScreensApi:
+    @pytest.fixture
+    def market(self, tmp_path):
+        """A workspace with twenty weeks of invented bars and a screen of its own."""
+        from candle_viewer.market import store
+        from candle_viewer.market.rebuild import RebuildConfig, rebuild_symbol
+
+        from .conftest import random_walk, trading_weeks
+
+        result = rebuild_symbol("testfx", random_walk(trading_weeks("2024-01-07", 20), seed=5, start_price=1.25, volumes=True), None, RebuildConfig())
+        folder = store.dataset_dir(tmp_path, "utc")
+        store.write_bars(folder, "testfx", result.bars)
+        store.write_manifest(folder, {"convention": "utc", "symbols": {"testfx": {"pip": 0.0001}}})
+        (tmp_path / "screens").mkdir()
+        (tmp_path / "screens" / "mine.py").write_text(
+            "from candle_viewer.screens.local_extremes import run\nNAME = 'mine'\nTITLE = '我的'\nPARAMS = {'timeframe': 'd1', 'window': 8}\n", encoding="utf-8")
+        return TestClient(create_app(tmp_path, frontend=None))
+
+    def test_screens_are_listed_and_run(self, market):
+        listed = {item["name"]: item for item in market.get("/api/screens").json()}
+        assert listed["mine"]["title"] == "我的" and not listed["mine"]["shipped"] and listed["mine"]["source"].endswith("mine.py")
+        assert listed["local_extremes"]["shipped"] and listed["local_extremes"]["source"] == ""
+
+        outcome = market.post("/api/screens/mine/run", json={"symbol": "testfx"}).json()
+        assert outcome["found"] > 0 and len(outcome["created"]) == outcome["found"] and outcome["known"] == 0
+        signals = market.get("/api/signals", params={"symbol": "testfx"}).json()
+        assert all(signal["status"] == "candidate" and signal["origin"] == "mine" and signal["key"] for signal in signals)
+        again = market.post("/api/screens/mine/run", json={"symbol": "testfx", "params": {"window": 8}}).json()
+        assert again["created"] == [] and again["known"] == outcome["found"]
+
+    def test_the_check_reports(self, market):
+        report = market.post("/api/screens/mine/check", json={"symbol": "testfx"}).json()
+        assert report["passed"] and report["found"] > 0 and report["cutoffs"] > 0
+        assert market.post("/api/screens/nothing/run", json={"symbol": "testfx"}).status_code == 404
+        assert market.post("/api/screens/mine/run", json={"symbol": "none"}).status_code == 404

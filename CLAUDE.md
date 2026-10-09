@@ -28,6 +28,7 @@ uv run pytest                                  # backend and data pipeline tests
 uv run candle-viewer                           # serve the application on http://127.0.0.1:8765
 uv run candle-data rebuild --source ~/candle_workspace/raw/dukascopy   # rebuild all timeframes
 uv run candle-data check                       # verify a rebuilt dataset
+uv run candle-screen list|run|check            # screens: scripts that look for signals; check = look-ahead test
 
 cd frontend
 npm install
@@ -47,6 +48,8 @@ node tools/dukascopy/repair.mjs --symbols eurusd                     # fill hole
   - `studies.py` studies as plain files: panes, drawings, tag, comment, screenshot, history
   - `signals.py` signals with their versions, touches, strategies; each signal and touch has a study in its folder
   - `main.py` HTTP API under `/api`, serves the built frontend
+- `src/candle_viewer/screen/` – screens: `market.py` what a script may see (bars up to a cut), `model.py` `Found`, `scripts.py` discovery, `runner.py` run, publish as candidates, look-ahead `check`, `cli.py`
+- `src/candle_viewer/screens/` – screens shipped as examples; the user's own live in `<workspace>/screens` and stay private
 - `src/candle_viewer/market/` – market data pipeline
   - `timeframes.py` timeframe definitions
   - `sessions.py` session calendar: assigns instants to bars under a convention (`utc`, `nyclose`)
@@ -96,6 +99,8 @@ Signal (and its updates), touch of a signal, and the strategy after a touch are 
 A signal that changes gets a new version; the earlier shape stays, and a touch points to the version it met. About half of the signals can be explained by a named model, the rest are "it feels so"; the record says which (`basis`), and never forces a model onto a signal.
 
 Lines and boxes are the same on every timeframe: a drawing made on one chart of a study shows on all of them.
+
+A screen's finding carries `known_at`, the first moment it could be known. The look-ahead check reruns the screen on cut data; a finding claimed knowable by the cut that the cut run misses means the screen looked ahead. The user's own screens (their methods) stay in the workspace, not in the repository.
 
 ## Data rules in brief
 

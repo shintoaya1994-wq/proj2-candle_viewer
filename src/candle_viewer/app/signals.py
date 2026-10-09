@@ -93,6 +93,8 @@ class NewSignal(Definition):
     basis: Literal["model", "partial", "feeling", "unset"] = "unset"
     origin: str = "manual"
     status: Literal["confirmed", "candidate", "rejected"] = "confirmed"
+    key: str | None = None         # names the finding among those of a screen, so that a second run knows it
+    note: str = ""                 # what the origin has to say about it; becomes the note of the first version
 
 
 class NewVersion(Definition):
@@ -120,6 +122,7 @@ class Signal(Model):
     basis: Literal["model", "partial", "feeling", "unset"]    # how well the user can say why
     versions: list[Version]
     relations: list[Relation] = Field(default_factory=list)
+    key: str | None = None
     created: str
     updated: str
 
@@ -246,7 +249,8 @@ class SignalStore:
             origin=new.origin,
             models=new.models,
             basis=new.basis,
-            versions=[Version(version=1, reason="initial", created=moment, **definition)],
+            versions=[Version(version=1, reason="initial", note=new.note, created=moment, **definition)],
+            key=new.key,
             created=moment,
             updated=moment,
         )
@@ -254,6 +258,19 @@ class SignalStore:
         folder.mkdir(parents=True)
         self._write(folder, signal)
         return signal
+
+    def keys(self, symbol: str, origin: str) -> dict[str, str]:
+        """The findings of a screen that are already signals of the symbol, by key; rejected ones included."""
+        if not _SYMBOL.match(symbol) or not (self.root / symbol).is_dir():
+            return {}
+        found = {}
+        for path in (self.root / symbol).glob(f"*/{SIGNAL_FILE}"):
+            if _hidden(path, self.root):
+                continue
+            stored = json.loads(path.read_text(encoding="utf-8"))
+            if stored.get("origin") == origin and stored.get("key"):
+                found[stored["key"]] = stored["id"]
+        return found
 
     def _write(self, folder: Path, signal: Signal) -> None:
         write_json(folder / SIGNAL_FILE, signal.model_dump(by_alias=True))

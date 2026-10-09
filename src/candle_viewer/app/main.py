@@ -10,9 +10,10 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..market import store
+from ..screen import runner, scripts
 from .bars import COLUMNS, MAX_COUNT, BarStore, UnknownSeries
 from .signals import Changes, InvalidSignal, NewSignal, NewTouch, NewVersion, SignalNotFound, SignalStore, SignalSummary, Strategy, StrategyText, TouchSummary
-from .studies import InvalidStudy, Study, StudyContent, StudyNotFound, StudyStore, Summary
+from .studies import InvalidStudy, Model, Study, StudyContent, StudyNotFound, StudyStore, Summary
 
 FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "dist"
 # What the interface may ask for. It goes up whenever an interface built for it would not work with the program before.
@@ -29,6 +30,41 @@ npm install &amp;&amp; npm run build</pre>
 Kind = Literal["signal", "touch"]
 
 
+class ScreenInfo(Model):
+    name: str
+    title: str
+    params: dict
+    shipped: bool
+    source: str
+
+
+class ScreenRequest(Model):
+    symbol: str
+    params: dict = {}
+
+
+class ScreenOutcome(Model):
+    found: int
+    created: list[str]
+    known: int
+
+
+class ScreenDifference(Model):
+    cutoff: int
+    kind: str
+    key: str
+    detail: str
+
+
+class ScreenReport(Model):
+    screen: str
+    symbol: str
+    found: int
+    cutoffs: int
+    passed: bool
+    differences: list[ScreenDifference]
+
+
 def create_app(workspace: Path, convention: str = "utc", frontend: Path | None = FRONTEND) -> FastAPI:
     workspace = Path(workspace).expanduser()
     bars = BarStore(store.dataset_dir(workspace, convention))
@@ -43,8 +79,13 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
 
     @app.exception_handler(InvalidStudy)
     @app.exception_handler(InvalidSignal)
+    @app.exception_handler(scripts.BadScreen)
     def invalid(_, error: ValueError) -> JSONResponse:
         return JSONResponse({"detail": str(error)}, status_code=422)
+
+    @app.exception_handler(scripts.UnknownScreen)
+    def unknown_screen(_, error: LookupError) -> JSONResponse:
+        return JSONResponse({"detail": f"no screen named {error}"}, status_code=404)
 
     # -- bars ------------------------------------------------------------------
 
@@ -164,6 +205,37 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
 
     studied("signal", "signals")
     studied("touch", "touches")
+
+    # -- screens: scripts that look for signals -------------------------------
+
+    def screen_info(screen: scripts.Screen) -> ScreenInfo:
+        return ScreenInfo(name=screen.name, title=screen.title, params=screen.params, shipped=screen.shipped, source="" if screen.shipped else str(screen.source))
+
+    @app.get("/api/screens")
+    def list_screens() -> list[ScreenInfo]:
+        return [screen_info(screen) for screen in scripts.discover(workspace).values()]
+
+    @app.post("/api/screens/{name}/run")
+    def run_screen(name: str, request: ScreenRequest) -> ScreenOutcome:
+        screen = scripts.get(workspace, name)
+        try:
+            found = runner.run(screen, bars.dataset, request.symbol, request.params)
+        except FileNotFoundError as error:
+            raise HTTPException(404, f"no bars for {request.symbol}") from error
+        outcome = runner.publish(found, signals, screen, request.symbol)
+        return ScreenOutcome(found=outcome.found, created=outcome.created, known=outcome.known)
+
+    @app.post("/api/screens/{name}/check")
+    def check_screen(name: str, request: ScreenRequest) -> ScreenReport:
+        screen = scripts.get(workspace, name)
+        try:
+            report = runner.check(screen, bars.dataset, request.symbol, request.params)
+        except FileNotFoundError as error:
+            raise HTTPException(404, f"no bars for {request.symbol}") from error
+        return ScreenReport(
+            screen=report.screen, symbol=report.symbol, found=report.found, cutoffs=report.cutoffs, passed=report.passed,
+            differences=[ScreenDifference(cutoff=item.cutoff, kind=item.kind, key=item.key, detail=item.detail) for item in report.differences],
+        )
 
     # -- the interface ---------------------------------------------------------
 
