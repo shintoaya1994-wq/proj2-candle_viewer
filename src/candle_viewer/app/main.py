@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from ..ai import chat as chatting
 from ..market import store
 from ..screen import runner, scripts
 from .bars import COLUMNS, MAX_COUNT, BarStore, UnknownSeries
@@ -65,11 +66,12 @@ class ScreenReport(Model):
     differences: list[ScreenDifference]
 
 
-def create_app(workspace: Path, convention: str = "utc", frontend: Path | None = FRONTEND) -> FastAPI:
+def create_app(workspace: Path, convention: str = "utc", frontend: Path | None = FRONTEND, ai_transport=None) -> FastAPI:
     workspace = Path(workspace).expanduser()
     bars = BarStore(store.dataset_dir(workspace, convention))
     studies = StudyStore(workspace / "studies")
     signals = SignalStore(workspace / "signals")
+    chat = chatting.Chat(workspace, bars, signals, convention, transport=ai_transport)
     app = FastAPI(title="Candle Viewer", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
 
     @app.exception_handler(StudyNotFound)
@@ -236,6 +238,35 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
             screen=report.screen, symbol=report.symbol, found=report.found, cutoffs=report.cutoffs, passed=report.passed,
             differences=[ScreenDifference(cutoff=item.cutoff, kind=item.kind, key=item.key, detail=item.detail) for item in report.differences],
         )
+
+    # -- AI ----------------------------------------------------------------------
+
+    @app.get("/api/ai/settings")
+    def ai_settings() -> chatting.Settings:
+        return chat.settings
+
+    @app.put("/api/ai/settings")
+    def save_ai_settings(settings: chatting.Settings) -> chatting.Settings:
+        return chatting.write_settings(workspace, settings)
+
+    @app.get("/api/ai/status")
+    async def ai_status() -> list[chatting.Availability]:
+        return await chat.status()
+
+    @app.post("/api/chat")
+    async def chat_answer(request: chatting.Request) -> StreamingResponse:
+        async def events():
+            try:
+                async for event in chat.answer(request):
+                    yield event
+            except chatting.ChatError as error:
+                yield chatting._event("error", message=str(error))
+                yield chatting._event("done", session=None)
+            except Exception as error:  # noqa: BLE001 - the page shows what went wrong
+                yield chatting._event("error", message=f"{type(error).__name__}: {error}")
+                yield chatting._event("done", session=None)
+
+        return StreamingResponse(events(), media_type="text/event-stream", headers={"cache-control": "no-cache", "x-accel-buffering": "no"})
 
     # -- the interface ---------------------------------------------------------
 

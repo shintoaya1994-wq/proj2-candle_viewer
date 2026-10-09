@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { API, api } from './api';
 import { parseRoute } from './route';
+import { ChatWindow } from './windows/ChatWindow';
 import { MainWindow } from './windows/MainWindow';
 import { StudyWindow } from './windows/StudyWindow';
 
@@ -55,5 +56,6 @@ export function App() {
       </div>
     );
   }
+  if (route.window === 'chat') return <ChatWindow route={route} />;
   return route.window === 'main' ? <MainWindow /> : <StudyWindow route={route} />;
 }

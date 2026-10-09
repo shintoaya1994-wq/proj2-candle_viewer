@@ -28,6 +28,12 @@
 - “检查”把数据截断后重跑脚本，看它声称的“可知时刻”有没有偷看未来
 - 写法见 [docs/screens.md](docs/screens.md)
 
+**AI 对话**
+
+- 对话窗口可以选本地模型（OpenAI 兼容接口）、Claude Code 或 Codex，带着正在看的品种和信号
+- Claude Code 和 Codex 通过接口读行情、标记候选信号、写筛选脚本；详见 [docs/ai.md](docs/ai.md)
+- 没有 AI 时软件照常可用
+
 信号、信号的触及、触及后的策略是三种分开的记录。
 
 ## 环境

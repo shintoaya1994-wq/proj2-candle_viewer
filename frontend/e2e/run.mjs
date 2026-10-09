@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -81,6 +82,36 @@ fs.writeFileSync(path.join(workspace, 'screens', 'example.py'), "from candle_vie
 fs.mkdirSync(oldFolder, { recursive: true });
 fs.writeFileSync(path.join(oldFolder, 'study.json'), `${JSON.stringify(oldStudy, null, 1)}\n`);
 fs.writeFileSync(path.join(oldFolder, 'notes.md'), '第一版写下的评论');
+
+// A model server that answers with what it was asked, so that the chat can be tried without a model.
+const modelPort = await freePort();
+const asked = [];
+const model = http.createServer((request, response) => {
+  if (request.url.endsWith('/models')) {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ data: [{ id: 'fake-model' }] }));
+    return;
+  }
+  let body = '';
+  request.on('data', (chunk) => (body += chunk));
+  request.on('end', () => {
+    const sent = JSON.parse(body);
+    asked.push(sent);
+    response.writeHead(200, { 'content-type': 'text/event-stream' });
+    const question = sent.messages.at(-1).content;
+    response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: `你问的是：${question}` } }] })}\n\n`);
+    setTimeout(() => {
+      response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '。完毕。' } }] })}\n\n`);
+      response.end('data: [DONE]\n\n');
+    }, 150);
+  });
+});
+await new Promise((resolve) => model.listen(modelPort, '127.0.0.1', resolve));
+fs.writeFileSync(path.join(workspace, 'ai.json'), JSON.stringify({
+  local: { enabled: true, baseUrl: `http://127.0.0.1:${modelPort}/v1`, model: '', apiKey: '', label: '假模型' },
+  claude: { enabled: true, command: '/nowhere/claude', label: 'Claude Code' },
+  codex: { enabled: false, command: '', label: 'Codex' },
+}));
 
 const port = await freePort();
 const origin = `http://127.0.0.1:${port}`;
@@ -602,6 +633,31 @@ try {
   assert.equal(await page.$eval(test('timeframe-h4'), (element) => element.className), 'on');
   await waitFor('the signals', async () => (await signals(page)).length === 2);
 
+  step('the chat window knows what the user is looking at and streams the answer of the model');
+  await page.click(`${test(`signal-${peak.id}`)} .open`);
+  const chatOpened = new Promise((resolve) => page.once('popup', resolve));
+  await page.click(test('open-chat'));
+  const chat = await Promise.race([chatOpened, sleep(8000).then(() => null)]);
+  assert.ok(chat, 'the chat window opens');
+  watch(chat);
+  await chat.waitForSelector(test('chat-window'));
+  await waitFor('the model to be found', async () => (await chat.$eval(test('availability'), (element) => element.textContent)).includes('fake-model'));
+  assert.ok((await chat.$eval(test('context'), (element) => element.textContent)).includes('日线高点'));
+  const options = await chat.$$eval(`${test('provider')} option`, (items) => items.map((item) => [item.textContent, item.disabled]));
+  assert.deepEqual(options, [['假模型', false], ['Claude Code（不可用）', false], ['Codex（已关闭）', true]]);
+  await chat.type(test('draft'), '这个信号怎么看？');
+  await chat.keyboard.press('Enter');
+  await waitFor('the answer', async () => (await chat.$eval(test('turn-1'), (element) => element.textContent)).includes('完毕'));
+  assert.ok((await chat.$eval(test('turn-1'), (element) => element.textContent)).includes('你问的是：这个信号怎么看？。完毕。'));
+  assert.equal(asked.length, 1);
+  assert.ok(asked[0].messages[0].role === 'system' && asked[0].messages[0].content.includes('日线高点') && asked[0].messages[0].content.includes('TESTFX'));
+  await chat.type(test('draft'), '再问一句');
+  await chat.keyboard.press('Enter');
+  await waitFor('the second answer', async () => asked.length === 2);
+  assert.equal(asked[1].messages.length, 4, 'the whole conversation goes to the model');
+  await picture(chat, 'chat');
+  await chat.close();
+
   step('a screen is run; what it finds are candidate signals to confirm or reject');
   await page.click(test('screens'));
   await page.waitForSelector(test('screen-example'));
@@ -662,6 +718,7 @@ try {
 } finally {
   await browser.close();
   server.kill('SIGTERM');
+  model.close();
   if (failure === null) fs.rmSync(workspace, { recursive: true, force: true });
 }
 

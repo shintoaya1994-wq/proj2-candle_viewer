@@ -5,6 +5,8 @@ description = "Local trading research workbench: multi-timeframe candle viewer w
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
+    "httpx2>=2.13.1",
+    "mcp>=2.3.0",
     "numpy>=2.0",
     "pandas>=2.2",
     "pyarrow>=17",
@@ -15,6 +17,7 @@ dependencies = [
 candle-data = "candle_viewer.market.cli:main"
 candle-viewer = "candle_viewer.app.cli:main"
 candle-screen = "candle_viewer.screen.cli:main"
+candle-viewer-mcp = "candle_viewer.ai.mcp_server:main"
 
 [dependency-groups]
 dev = ["httpx2", "pytest>=8"]

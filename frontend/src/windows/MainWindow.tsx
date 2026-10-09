@@ -14,7 +14,7 @@ import { ScreenMenu } from '../components/ScreenMenu';
 import { SignalPanel, matches } from '../components/SignalPanel';
 import { describe, moment } from '../format';
 import { moment as when } from '../format';
-import { openStudy, type StudyRoute } from '../route';
+import { openStudy, type ChatRoute, type StudyRoute } from '../route';
 import { remember, remembered, type Settings } from '../settings';
 import { TIMEFRAMES } from '../timeframes';
 import type { DrawingState, Meta, ScreenInfo, Shape, Signal, Status, StudySummary } from '../types';
@@ -158,7 +158,7 @@ export function MainWindow() {
     return task.kind === 'signal' ? { tool: task.tool.drawing, color: SIGNAL_COLOR } : { tool: 'spot', color: TOUCH_COLOR };
   }, [task]);
 
-  const open = useCallback((route: StudyRoute) => {
+  const open = useCallback((route: StudyRoute | ChatRoute) => {
     setStatus(openStudy(route) ? '' : BLOCKED);
   }, []);
 
@@ -354,6 +354,9 @@ export function MainWindow() {
         </div>
 
         <div className="group">
+          <button type="button" data-testid="open-chat" title="和 AI 讨论正在看的东西；它也能写筛选脚本、标记候选信号" onClick={() => open({ window: 'chat', symbol: symbol.name, timeframe, signal: chosen })}>
+            AI 对话
+          </button>
           <ScreenMenu screens={screens} busy={screening} onRun={runScreen} onCheck={checkScreen} />
           <IndicatorMenu value={settings.indicators} onChange={(indicators) => alter({ indicators })} />
           <select value={settings.timezone} data-testid="timezone" title="图上显示的时间" onChange={(event) => alter({ timezone: event.target.value })}>

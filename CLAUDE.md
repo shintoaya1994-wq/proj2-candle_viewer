@@ -29,6 +29,7 @@ uv run candle-viewer                           # serve the application on http:/
 uv run candle-data rebuild --source ~/candle_workspace/raw/dukascopy   # rebuild all timeframes
 uv run candle-data check                       # verify a rebuilt dataset
 uv run candle-screen list|run|check            # screens: scripts that look for signals; check = look-ahead test
+uv run candle-viewer-mcp --workspace ~/candle_workspace   # MCP server over bars and records, for Claude Code and Codex
 
 cd frontend
 npm install
@@ -48,6 +49,7 @@ node tools/dukascopy/repair.mjs --symbols eurusd                     # fill hole
   - `studies.py` studies as plain files: panes, drawings, tag, comment, screenshot, history
   - `signals.py` signals with their versions, touches, strategies; each signal and touch has a study in its folder
   - `main.py` HTTP API under `/api`, serves the built frontend
+- `src/candle_viewer/ai/` – `mcp_server.py` the MCP server (mcp 2, `MCPServer`), `chat.py` the chat: local OpenAI-compatible model, `claude -p` and `codex exec` as subprocesses with the MCP server attached, answers streamed as server-sent events; settings in `<workspace>/ai.json`
 - `src/candle_viewer/screen/` – screens: `market.py` what a script may see (bars up to a cut), `model.py` `Found`, `scripts.py` discovery, `runner.py` run, publish as candidates, look-ahead `check`, `cli.py`
 - `src/candle_viewer/screens/` – screens shipped as examples; the user's own live in `<workspace>/screens` and stay private
 - `src/candle_viewer/market/` – market data pipeline
@@ -78,6 +80,12 @@ node tools/dukascopy/repair.mjs --symbols eurusd                     # fill hole
 - `tools/dukascopy/` – Node.js tools built on dukascopy-node: `fetch.mjs` downloads, `repair.mjs` fills holes from ticks, `client.mjs` paces and caches requests
 - `tests/` – pytest, synthetic data
 - `docs/data-conventions.md` – data rules, in Chinese
+
+## Things to know about the assistants
+
+- `claude -p --output-format stream-json --verbose --include-partial-messages` streams `stream_event` items; the session id comes in the `system` init event and the `result`; `--resume <id>` continues. MCP tools are allowed with `--allowedTools "mcp__candle-viewer__*"`.
+- `codex exec --json` prints JSONL (`thread.started`, `item.started`, `item.completed`, `turn.completed`); `codex exec resume <thread_id>` continues. MCP servers go in with `-c mcp_servers.<name>.command=...`; tool calls need `--approve-for-me`, which cannot be combined with `--sandbox`.
+- Never run the real commands or the user's model in tests; the tests use fake commands and a fake model server. A smoke test against the real ones spends the user's quota: do it once, on a scratch workspace.
 
 ## Things to know about klinecharts 10
 

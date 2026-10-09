@@ -169,6 +169,97 @@ button.primary {
   box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
 }
 
+/* The chat window. */
+
+.chat-window .backdrop {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.turns {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.turn {
+  max-width: 900px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.turn.user {
+  margin-left: 40px;
+  background: #eef3ff;
+}
+
+.turn .said {
+  margin: 0;
+  font: inherit;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.turn .tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.turn .error {
+  margin-top: 6px;
+  color: #be123c;
+}
+
+.thinking summary {
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.thinking pre {
+  margin: 4px 0;
+  font: inherit;
+  color: var(--dim);
+  white-space: pre-wrap;
+}
+
+.ask {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.ask textarea {
+  flex: 1;
+  min-height: 64px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.ask button {
+  height: auto;
+  padding: 0 16px;
+}
+
+.dialog.settings {
+  width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .popover.wide {
   width: 420px;
 }

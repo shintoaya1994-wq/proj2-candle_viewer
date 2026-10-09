@@ -220,6 +220,43 @@ export interface ScreenOutcome {
   known: number;
 }
 
+// -- AI -------------------------------------------------------------------------
+
+export type Provider = 'local' | 'claude' | 'codex';
+
+export interface AiSettings {
+  local: { enabled: boolean; baseUrl: string; model: string; apiKey: string; label: string };
+  claude: { enabled: boolean; command: string; label: string };
+  codex: { enabled: boolean; command: string; label: string };
+}
+
+export interface Availability {
+  provider: Provider;
+  label: string;
+  enabled: boolean;
+  available: boolean;
+  detail: string;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatRequest {
+  provider: Provider;
+  chat: string;
+  messages: ChatMessage[];
+  context: { symbol: string | null; timeframe: string | null; signal: string | null };
+}
+
+export type ChatEvent =
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; text: string }
+  | { type: 'tool'; name: string }
+  | { type: 'error'; message: string }
+  | { type: 'done'; session: string | null };
+
 export interface ScreenReport {
   screen: string;
   symbol: string;

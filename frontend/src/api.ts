@@ -1,5 +1,9 @@
 import type {
+  AiSettings,
+  Availability,
   BarsResponse,
+  ChatEvent,
+  ChatRequest,
   Meta,
   NewSignal,
   NewTouch,
@@ -96,6 +100,30 @@ export const api = {
   screens: () => request<ScreenInfo[]>('/api/screens'),
   runScreen: (name: string, symbol: string, params: Record<string, unknown> = {}) => request<ScreenOutcome>(`/api/screens/${name}/run`, json('POST', { symbol, params })),
   checkScreen: (name: string, symbol: string, params: Record<string, unknown> = {}) => request<ScreenReport>(`/api/screens/${name}/check`, json('POST', { symbol, params })),
+
+  aiSettings: () => request<AiSettings>('/api/ai/settings'),
+  saveAiSettings: (settings: AiSettings) => request<AiSettings>('/api/ai/settings', json('PUT', settings)),
+  aiStatus: () => request<Availability[]>('/api/ai/status'),
+
+  /** Asks the assistant; each event arrives as it is streamed. Stops when `stop` is aborted. */
+  async chat(body: ChatRequest, onEvent: (event: ChatEvent) => void, stop: AbortSignal): Promise<void> {
+    const response = await fetch('/api/chat', { ...json('POST', body), signal: stop });
+    if (!response.ok || !response.body) throw new ApiError(response.status, await response.text());
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffered = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffered += decoder.decode(value, { stream: true });
+      const parts = buffered.split('\n\n');
+      buffered = parts.pop() ?? '';
+      for (const part of parts) {
+        const line = part.split('\n').find((item) => item.startsWith('data:'));
+        if (line) onEvent(JSON.parse(line.slice(5)) as ChatEvent);
+      }
+    }
+  },
 
   // the study of a signal or a touch; null while nothing has been saved
   studyOf: (kind: SubjectKind, id: string) => request<Study | null>(`${home(kind, id)}/study`),
