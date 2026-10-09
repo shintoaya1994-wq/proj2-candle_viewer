@@ -65,7 +65,7 @@ export interface BarsQuery {
 const home = (kind: SubjectKind, id: string) => `/api/${kind === 'signal' ? 'signals' : 'touches'}/${id}`;
 
 /** What this interface asks of the program; see API in src/candle_viewer/app/main.py. */
-export const API = 2;
+export const API = 3;
 
 export const api = {
   meta: () => request<Meta>('/api/meta'),

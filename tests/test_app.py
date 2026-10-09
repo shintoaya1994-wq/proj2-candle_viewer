@@ -311,7 +311,7 @@ class TestStudies:
 
 class TestVersion:
     def test_the_interface_can_tell_which_program_it_talks_to(self, client):
-        assert client.get("/api/meta").json()["api"] == 2
+        assert client.get("/api/meta").json()["api"] == 3
 
 
 class TestFrontend:

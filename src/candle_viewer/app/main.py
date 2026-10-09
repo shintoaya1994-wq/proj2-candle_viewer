@@ -18,7 +18,7 @@ from .studies import InvalidStudy, Model, Study, StudyContent, StudyNotFound, St
 
 FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "dist"
 # What the interface may ask for. It goes up whenever an interface built for it would not work with the program before.
-API = 2
+API = 3
 NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>K 线研究工作台</title>
 <body style="font-family: system-ui, sans-serif; padding: 48px; line-height: 1.7">
 <h1>界面还没有构建</h1>
