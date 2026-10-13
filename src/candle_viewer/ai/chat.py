@@ -28,12 +28,15 @@ from pydantic.alias_generators import to_camel
 
 from ..app.bars import BarStore
 from ..app.projects import Projects, Space
+from .mcp_server import build as build_tools
 from ..app.studies import write_json
 
 Provider = Literal["local", "claude", "codex"]
 SETTINGS_FILE = "ai.json"
 TOOL_PATTERN = "mcp__candle-viewer__*"
 RECENT_BARS = 80
+MAX_ROUNDS = 16
+MAX_TOOL_TEXT = 60_000
 
 
 class Model(BaseModel):
@@ -125,6 +128,7 @@ class Chat:
         self.convention = convention
         self.transport = transport
         self.sessions: dict[tuple[str, str], str] = {}
+        self._tools: dict[str, object] = {}
 
     @property
     def settings(self) -> Settings:
@@ -220,32 +224,71 @@ class Chat:
             async for event in (self._claude if request.provider == "claude" else self._codex)(path, request):
                 yield event
 
+    def _server(self, project: str):
+        """The tools of this application for the project, the same ones Claude Code and Codex get, held in process."""
+        if project not in self._tools:
+            self._tools[project] = build_tools(self.workspace, self.convention, project)
+        return self._tools[project]
+
     async def _local(self, local: LocalSettings, request: Request) -> AsyncIterator[str]:
+        """The local model, with the tools of the application: it calls them, gets the results, and answers in the end."""
         model = local.model or (await self._models(local))[0]
-        messages = [{"role": "system", "content": self.briefing(request.context, with_bars=True)}]
+        server = self._server(request.context.project)
+        tools = [{"type": "function", "function": {"name": tool.name, "description": tool.description or "", "parameters": tool.input_schema}} for tool in await server.list_tools()]
+        messages: list[dict] = [{"role": "system", "content": self.briefing(request.context, with_bars=False) + "\n你可以调用工具读行情、查记录、运行 Python、标记候选信号。查全部数据或找特征点时用 run_python。"}]
         messages += [{"role": m.role, "content": m.content} for m in request.messages]
-        body = {"model": model, "messages": messages, "stream": True}
-        async with httpx.AsyncClient(transport=self.transport, timeout=httpx.Timeout(300, connect=10)) as client:
-            async with client.stream("POST", f"{local.base_url.rstrip('/')}/chat/completions", json=body, headers=self._headers(local)) as response:
-                if response.status_code >= 400:
-                    raise ChatError(f"模型服务回答 {response.status_code}: {(await response.aread())[:300].decode('utf-8', 'replace')}")
-                async for line in response.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    for choice in chunk.get("choices", []):
-                        delta = choice.get("delta", {})
-                        if delta.get("reasoning_content"):
-                            yield _event("thinking", text=delta["reasoning_content"])
-                        if delta.get("content"):
-                            yield _event("text", text=delta["content"])
+        url = f"{local.base_url.rstrip('/')}/chat/completions"
+        async with httpx.AsyncClient(transport=self.transport, timeout=httpx.Timeout(600, connect=10)) as client:
+            for _ in range(MAX_ROUNDS):
+                content = ""
+                calls: dict[int, dict] = {}
+                body = {"model": model, "messages": messages, "stream": True, "tools": tools, "tool_choice": "auto"}
+                async with client.stream("POST", url, json=body, headers=self._headers(local)) as response:
+                    if response.status_code >= 400:
+                        raise ChatError(f"模型服务回答 {response.status_code}: {(await response.aread())[:300].decode('utf-8', 'replace')}")
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        for choice in chunk.get("choices", []):
+                            delta = choice.get("delta", {})
+                            if delta.get("reasoning_content"):
+                                yield _event("thinking", text=delta["reasoning_content"])
+                            if delta.get("content"):
+                                content += delta["content"]
+                                yield _event("text", text=delta["content"])
+                            for piece in delta.get("tool_calls") or []:
+                                call = calls.setdefault(piece.get("index", 0), {"id": "", "name": "", "arguments": ""})
+                                call["id"] = piece.get("id") or call["id"]
+                                function = piece.get("function", {})
+                                call["name"] = function.get("name") or call["name"]
+                                call["arguments"] += function.get("arguments") or ""
+                if not calls:
+                    break
+                ordered = [calls[index] for index in sorted(calls)]
+                messages.append({"role": "assistant", "content": content or None, "tool_calls": [
+                    {"id": call["id"] or f"call-{index}", "type": "function", "function": {"name": call["name"], "arguments": call["arguments"] or "{}"}} for index, call in enumerate(ordered)]})
+                for index, call in enumerate(ordered):
+                    yield _event("tool", name=call["name"])
+                    messages.append({"role": "tool", "tool_call_id": call["id"] or f"call-{index}", "content": await self._call(server, call["name"], call["arguments"])})
+                if content:
+                    yield _event("text", text="\n")
         yield _event("done", session=None)
+
+    @staticmethod
+    async def _call(server, name: str, arguments: str) -> str:
+        try:
+            result = await server.call_tool(name, json.loads(arguments or "{}"))
+        except Exception as error:  # noqa: BLE001 - the model gets to see what went wrong
+            return f"error: {type(error).__name__}: {error}"
+        text = "\n".join(getattr(part, "text", "") for part in getattr(result, "content", []) if getattr(part, "text", ""))
+        return text[:MAX_TOOL_TEXT] if text else "(no output)"
 
     # -- the commands --------------------------------------------------------------
 

@@ -208,3 +208,59 @@ class TestMcpServer:
             assert not (tmp_path / "screens" / "bad.py").exists()
 
         asyncio.run(scenario())
+
+
+class ToolModel:
+    """An OpenAI-compatible server whose model calls a tool first, then answers with what it got."""
+
+    def __init__(self) -> None:
+        self.requests: list[dict] = []
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "fake-model"}]})
+        body = json.loads(request.content)
+        self.requests.append(body)
+        if body["messages"][-1]["role"] == "tool":
+            chunks = [{"choices": [{"delta": {"content": f"工具说：{body['messages'][-1]['content'][:60]}"}}]}]
+        else:
+            chunks = [
+                {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call-1", "type": "function", "function": {"name": "run_python", "arguments": "{\"code\": "}}]}}]},
+                {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "\"print(1 + 1, PROJECT)\"}"}}]}}]},
+            ]
+        text = "".join(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n" for chunk in chunks) + "data: [DONE]\n\n"
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=text.encode("utf-8"))
+
+
+class TestLocalTools:
+    def test_the_local_model_calls_the_tools_and_sees_the_results(self, tmp_path):
+        model = ToolModel()
+        client = TestClient(create_app(tmp_path, frontend=None, ai_transport=httpx.MockTransport(model.handle)))
+        events = sse(client.post("/api/chat", json={"provider": "local", "chat": "c", "messages": [{"role": "user", "content": "算一下"}]}).text)
+        assert [event["type"] for event in events] == ["tool", "text", "done"]
+        assert events[0]["name"] == "run_python" and events[1]["text"].startswith("工具说：2 ")
+        first, second = model.requests
+        assert {tool["function"]["name"] for tool in first["tools"]} >= {"get_bars", "run_python", "create_signal", "list_signals"}
+        assert second["messages"][-2]["role"] == "assistant" and second["messages"][-2]["tool_calls"][0]["function"]["arguments"] == '{"code": "print(1 + 1, PROJECT)"}'
+        assert second["messages"][-1] == {"role": "tool", "tool_call_id": "call-1", "content": "2 \n"}
+
+    def test_run_python_sees_the_data_and_reports_failures(self, tmp_path):
+        from candle_viewer.market import store
+        from candle_viewer.market.rebuild import RebuildConfig, rebuild_symbol
+
+        from .conftest import random_walk, trading_weeks
+
+        result = rebuild_symbol("testfx", random_walk(trading_weeks("2024-01-07", 2), seed=5, start_price=1.25, volumes=True), None, RebuildConfig())
+        folder = store.dataset_dir(tmp_path, "utc")
+        store.write_bars(folder, "testfx", result.bars)
+        store.write_manifest(folder, {"convention": "utc", "symbols": {"testfx": {"pip": 0.0001}}})
+        server = build(tmp_path)
+
+        async def scenario():
+            text = lambda result: result.content[0].text  # noqa: E731
+            counted = text(await server.call_tool("run_python", {"code": "from candle_viewer.screen import Market\nbars = Market(DATASET).bars('testfx', 'h1')\nprint(len(bars), bars.high.max() > bars.low.min())"}))
+            assert counted.strip().split() == [str(2 * 5 * 24), "True"]
+            failed = text(await server.call_tool("run_python", {"code": "print('before')\nraise ValueError('oops')"}))
+            assert "before" in failed and "ValueError: oops" in failed and "[exit code 1]" in failed
+
+        asyncio.run(scenario())

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +24,9 @@ from ..market import store
 from ..market.cli import DEFAULT_WORKSPACE
 from ..screen import runner, scripts
 
-MAX_BARS = 2000
+MAX_BARS = 5000
+PYTHON_TIMEOUT = 300
+MAX_OUTPUT = 40_000
 
 
 def _when(ms: int) -> str:
@@ -56,6 +60,7 @@ def build(workspace: Path, convention: str = "utc", project: str = "") -> MCPSer
             "Signals, touches of signals and strategies after a touch are three separate records. "
             "A screen is a Python script that looks for signals; what it finds becomes candidate signals the user confirms or rejects. "
             "Write screens with save_screen and run check_screen before run_screen. See the screens guide (resource guide://screens). "
+            "For any question over the whole data (all bars of a symbol, statistics, finding bars with some property) use run_python. "
             + (f"The records in use are those of the project '{space.label}'." if project else "The records in use are the user's main ones.")
         ),
     )
@@ -67,7 +72,7 @@ def build(workspace: Path, convention: str = "utc", project: str = "") -> MCPSer
 
     @server.tool()
     def get_bars(symbol: str, timeframe: str, before: str | None = None, after: str | None = None, around: str | None = None, count: int = 300) -> str:
-        """Bars of a symbol as CSV lines (time, open, high, low, close, volume), at most 2000.
+        """Bars of a symbol as CSV lines (time, open, high, low, close, volume), at most 5000 per call; run_python sees all of them.
 
         timeframe: m1, m15, h1, h4, d1, w1, 1mo, 3mo. Give one of before/after/around as
         '2024-01-10 13:00' (UTC) or omit all three for the latest bars.
@@ -180,6 +185,30 @@ def build(workspace: Path, convention: str = "utc", project: str = "") -> MCPSer
         report = runner.check(scripts.get(workspace, name, folders), dataset, symbol, params)
         lines = [f"{item.kind} at {_when(item.cutoff)}: {item.key} {item.detail}" for item in report.differences[:50]]
         return f"{'passed' if report.passed else 'FAILED: the screen looks ahead'}; {report.found} found, {report.cutoffs} cutoffs\n" + "\n".join(lines)
+
+    @server.tool()
+    def run_python(code: str) -> str:
+        """Runs Python code over the whole market data and returns what it prints (stdout and stderr, at most 40000 characters, 300 s).
+
+        The code runs in the environment of the application, in the folder of the project. Load bars with::
+
+            from candle_viewer.screen import Market, atr, rolling_max_before
+            market = Market(DATASET)                 # DATASET is set; Market(DATASET, as_of=ms) cuts the data at a moment
+            bars = market.bars("eurusd", "h1")       # numpy arrays: bars.timestamp (UTC ms), .open, .high, .low, .close
+            day = market.bar_start(bars.timestamp, "d1")
+
+        numpy and pandas are available. Timeframes: m1, m15, h1, h4, d1, w1, 1mo, 3mo. Print what you find; keep the output short.
+        """
+        prelude = f"from pathlib import Path\nDATASET = Path({str(dataset)!r})\nWORKSPACE = Path({str(workspace)!r})\nPROJECT = {project!r}\n"
+        env = {**os.environ, "CANDLE_WORKSPACE": str(workspace), "CANDLE_DATASET": str(dataset), "CANDLE_PROJECT": project, "PYTHONIOENCODING": "utf-8"}
+        try:
+            done = subprocess.run([sys.executable, "-"], input=prelude + code, capture_output=True, text=True, timeout=PYTHON_TIMEOUT, cwd=space.root, env=env)
+        except subprocess.TimeoutExpired:
+            return f"stopped after {PYTHON_TIMEOUT} s"
+        output = done.stdout + (f"\n[stderr]\n{done.stderr}" if done.stderr.strip() else "")
+        if done.returncode != 0:
+            output += f"\n[exit code {done.returncode}]"
+        return output[-MAX_OUTPUT:] if len(output) > MAX_OUTPUT else output
 
     @server.resource("guide://screens")
     def screens_guide() -> str:
