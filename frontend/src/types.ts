@@ -220,6 +220,15 @@ export interface ScreenOutcome {
   known: number;
 }
 
+/** A set of records of its own over the same market data; the main records have the empty name. */
+export interface ProjectInfo {
+  name: string;
+  label: string;
+  created: string | null;
+  signals: number;
+  studies: number;
+}
+
 // -- AI -------------------------------------------------------------------------
 
 export type Provider = 'local' | 'claude' | 'codex';

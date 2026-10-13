@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import unquote
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -13,12 +14,13 @@ from ..ai import chat as chatting
 from ..market import store
 from ..screen import runner, scripts
 from .bars import COLUMNS, MAX_COUNT, BarStore, UnknownSeries
-from .signals import Changes, InvalidSignal, NewSignal, NewTouch, NewVersion, SignalNotFound, SignalStore, SignalSummary, Strategy, StrategyText, TouchSummary
-from .studies import InvalidStudy, Model, Study, StudyContent, StudyNotFound, StudyStore, Summary
+from .projects import InvalidProject, Projects, Space, UnknownProject
+from .signals import Changes, InvalidSignal, NewSignal, NewTouch, NewVersion, SignalNotFound, SignalSummary, Strategy, StrategyText, TouchSummary
+from .studies import InvalidStudy, Model, Study, StudyContent, StudyNotFound, Summary
 
 FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "dist"
 # What the interface may ask for. It goes up whenever an interface built for it would not work with the program before.
-API = 3
+API = 4
 NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>K 线研究工作台</title>
 <body style="font-family: system-ui, sans-serif; padding: 48px; line-height: 1.7">
 <h1>界面还没有构建</h1>
@@ -37,6 +39,18 @@ class ScreenInfo(Model):
     params: dict
     shipped: bool
     source: str
+
+
+class ProjectInfo(Model):
+    name: str
+    label: str
+    created: str | None
+    signals: int
+    studies: int
+
+
+class NewProject(Model):
+    name: str
 
 
 class ScreenRequest(Model):
@@ -69,18 +83,23 @@ class ScreenReport(Model):
 def create_app(workspace: Path, convention: str = "utc", frontend: Path | None = FRONTEND, ai_transport=None) -> FastAPI:
     workspace = Path(workspace).expanduser()
     bars = BarStore(store.dataset_dir(workspace, convention))
-    studies = StudyStore(workspace / "studies")
-    signals = SignalStore(workspace / "signals")
-    chat = chatting.Chat(workspace, bars, signals, convention, transport=ai_transport)
+    projects = Projects(workspace)
+    chat = chatting.Chat(workspace, bars, projects, convention, transport=ai_transport)
+
+    def space_of(x_project: str = Header("")) -> Space:
+        """The records a request works on. The header names the project, percent-encoded since headers are ASCII; none means the main records."""
+        return projects.get(unquote(x_project))
     app = FastAPI(title="Candle Viewer", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
 
     @app.exception_handler(StudyNotFound)
     @app.exception_handler(SignalNotFound)
+    @app.exception_handler(UnknownProject)
     def not_found(_, error: LookupError) -> JSONResponse:
         return JSONResponse({"detail": f"not found: {error}"}, status_code=404)
 
     @app.exception_handler(InvalidStudy)
     @app.exception_handler(InvalidSignal)
+    @app.exception_handler(InvalidProject)
     @app.exception_handler(scripts.BadScreen)
     def invalid(_, error: ValueError) -> JSONResponse:
         return JSONResponse({"detail": str(error)}, status_code=422)
@@ -119,117 +138,117 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
     # -- studies that stand on their own ---------------------------------------
 
     @app.get("/api/studies")
-    def list_studies() -> list[Summary]:
-        return studies.list()
+    def list_studies(space: Space = Depends(space_of)) -> list[Summary]:
+        return space.studies.list()
 
     @app.post("/api/studies", status_code=201)
-    def create_study(content: StudyContent) -> Study:
-        return studies.create(content)
+    def create_study(content: StudyContent, space: Space = Depends(space_of)) -> Study:
+        return space.studies.create(content)
 
     @app.get("/api/studies/{study_id}")
-    def get_study(study_id: str) -> Study:
-        return studies.get(study_id)
+    def get_study(study_id: str, space: Space = Depends(space_of)) -> Study:
+        return space.studies.get(study_id)
 
     @app.put("/api/studies/{study_id}")
-    def update_study(study_id: str, content: StudyContent) -> Study:
-        return studies.update(study_id, content)
+    def update_study(study_id: str, content: StudyContent, space: Space = Depends(space_of)) -> Study:
+        return space.studies.update(study_id, content)
 
     @app.delete("/api/studies/{study_id}", status_code=204)
-    def delete_study(study_id: str) -> None:
-        studies.delete(study_id)
+    def delete_study(study_id: str, space: Space = Depends(space_of)) -> None:
+        space.studies.delete(study_id)
 
     @app.get("/api/studies/{study_id}/screenshot")
-    def screenshot(study_id: str) -> FileResponse:
-        return FileResponse(studies.screenshot(study_id), media_type="image/png")
+    def screenshot(study_id: str, space: Space = Depends(space_of)) -> FileResponse:
+        return FileResponse(space.studies.screenshot(study_id), media_type="image/png")
 
     # -- signals ---------------------------------------------------------------
 
     @app.get("/api/signals")
-    def list_signals(symbol: str | None = None) -> list[SignalSummary]:
-        return signals.list(symbol)
+    def list_signals(symbol: str | None = None, space: Space = Depends(space_of)) -> list[SignalSummary]:
+        return space.signals.list(symbol)
 
     @app.post("/api/signals", status_code=201)
-    def create_signal(new: NewSignal) -> SignalSummary:
-        return signals.get(signals.create(new).id)
+    def create_signal(new: NewSignal, space: Space = Depends(space_of)) -> SignalSummary:
+        return space.signals.get(space.signals.create(new).id)
 
     @app.get("/api/signals/{signal_id}")
-    def get_signal(signal_id: str) -> SignalSummary:
-        return signals.get(signal_id)
+    def get_signal(signal_id: str, space: Space = Depends(space_of)) -> SignalSummary:
+        return space.signals.get(signal_id)
 
     @app.patch("/api/signals/{signal_id}")
-    def change_signal(signal_id: str, changes: Changes) -> SignalSummary:
-        return signals.change(signal_id, changes)
+    def change_signal(signal_id: str, changes: Changes, space: Space = Depends(space_of)) -> SignalSummary:
+        return space.signals.change(signal_id, changes)
 
     @app.post("/api/signals/{signal_id}/versions", status_code=201)
-    def add_version(signal_id: str, new: NewVersion) -> SignalSummary:
-        return signals.add_version(signal_id, new)
+    def add_version(signal_id: str, new: NewVersion, space: Space = Depends(space_of)) -> SignalSummary:
+        return space.signals.add_version(signal_id, new)
 
     @app.delete("/api/signals/{signal_id}", status_code=204)
-    def delete_signal(signal_id: str) -> None:
-        signals.delete(signal_id)
+    def delete_signal(signal_id: str, space: Space = Depends(space_of)) -> None:
+        space.signals.delete(signal_id)
 
     # -- touches and their strategies ------------------------------------------
 
     @app.post("/api/signals/{signal_id}/touches", status_code=201)
-    def add_touch(signal_id: str, new: NewTouch) -> TouchSummary:
-        return signals.add_touch(signal_id, new)
+    def add_touch(signal_id: str, new: NewTouch, space: Space = Depends(space_of)) -> TouchSummary:
+        return space.signals.add_touch(signal_id, new)
 
     @app.get("/api/touches/{touch_id}")
-    def get_touch(touch_id: str) -> TouchSummary:
-        return signals.touch(touch_id)
+    def get_touch(touch_id: str, space: Space = Depends(space_of)) -> TouchSummary:
+        return space.signals.touch(touch_id)
 
     @app.delete("/api/touches/{touch_id}", status_code=204)
-    def delete_touch(touch_id: str) -> None:
-        signals.delete_touch(touch_id)
+    def delete_touch(touch_id: str, space: Space = Depends(space_of)) -> None:
+        space.signals.delete_touch(touch_id)
 
     @app.get("/api/touches/{touch_id}/strategies")
-    def get_strategies(touch_id: str) -> list[Strategy]:
-        return signals.strategies(touch_id)
+    def get_strategies(touch_id: str, space: Space = Depends(space_of)) -> list[Strategy]:
+        return space.signals.strategies(touch_id)
 
     @app.put("/api/touches/{touch_id}/strategies")
-    def save_strategies(touch_id: str, texts: list[StrategyText]) -> list[Strategy]:
-        return signals.save_strategies(touch_id, texts)
+    def save_strategies(touch_id: str, texts: list[StrategyText], space: Space = Depends(space_of)) -> list[Strategy]:
+        return space.signals.save_strategies(touch_id, texts)
 
     # -- the study of a signal or a touch --------------------------------------
 
-    def studied(kind: Kind, plural: str) -> None:
+    def studied(kind: Kind, plural: str, space: Space = Depends(space_of)) -> None:
         @app.get(f"/api/{plural}/{{subject_id}}/study")
-        def get_subject_study(subject_id: str) -> Study | None:
-            return signals.study(kind, subject_id)
+        def get_subject_study(subject_id: str, space: Space = Depends(space_of)) -> Study | None:
+            return space.signals.study(kind, subject_id)
 
         @app.put(f"/api/{plural}/{{subject_id}}/study")
-        def save_subject_study(subject_id: str, content: StudyContent) -> Study:
-            return signals.save_study(kind, subject_id, content)
+        def save_subject_study(subject_id: str, content: StudyContent, space: Space = Depends(space_of)) -> Study:
+            return space.signals.save_study(kind, subject_id, content)
 
         @app.get(f"/api/{plural}/{{subject_id}}/screenshot")
-        def subject_screenshot(subject_id: str) -> FileResponse:
-            return FileResponse(signals.screenshot(kind, subject_id), media_type="image/png")
+        def subject_screenshot(subject_id: str, space: Space = Depends(space_of)) -> FileResponse:
+            return FileResponse(space.signals.screenshot(kind, subject_id), media_type="image/png")
 
     studied("signal", "signals")
     studied("touch", "touches")
 
     # -- screens: scripts that look for signals -------------------------------
 
-    def screen_info(screen: scripts.Screen) -> ScreenInfo:
+    def screen_info(screen: scripts.Screen, space: Space = Depends(space_of)) -> ScreenInfo:
         return ScreenInfo(name=screen.name, title=screen.title, params=screen.params, shipped=screen.shipped, source="" if screen.shipped else str(screen.source))
 
     @app.get("/api/screens")
-    def list_screens() -> list[ScreenInfo]:
-        return [screen_info(screen) for screen in scripts.discover(workspace).values()]
+    def list_screens(space: Space = Depends(space_of)) -> list[ScreenInfo]:
+        return [screen_info(screen) for screen in scripts.discover(workspace, space.screen_dirs).values()]
 
     @app.post("/api/screens/{name}/run")
-    def run_screen(name: str, request: ScreenRequest) -> ScreenOutcome:
-        screen = scripts.get(workspace, name)
+    def run_screen(name: str, request: ScreenRequest, space: Space = Depends(space_of)) -> ScreenOutcome:
+        screen = scripts.get(workspace, name, space.screen_dirs)
         try:
             found = runner.run(screen, bars.dataset, request.symbol, request.params)
         except FileNotFoundError as error:
             raise HTTPException(404, f"no bars for {request.symbol}") from error
-        outcome = runner.publish(found, signals, screen, request.symbol)
+        outcome = runner.publish(found, space.signals, screen, request.symbol)
         return ScreenOutcome(found=outcome.found, created=outcome.created, known=outcome.known)
 
     @app.post("/api/screens/{name}/check")
-    def check_screen(name: str, request: ScreenRequest) -> ScreenReport:
-        screen = scripts.get(workspace, name)
+    def check_screen(name: str, request: ScreenRequest, space: Space = Depends(space_of)) -> ScreenReport:
+        screen = scripts.get(workspace, name, space.screen_dirs)
         try:
             report = runner.check(screen, bars.dataset, request.symbol, request.params)
         except FileNotFoundError as error:
@@ -238,6 +257,21 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
             screen=report.screen, symbol=report.symbol, found=report.found, cutoffs=report.cutoffs, passed=report.passed,
             differences=[ScreenDifference(cutoff=item.cutoff, kind=item.kind, key=item.key, detail=item.detail) for item in report.differences],
         )
+
+    # -- projects ----------------------------------------------------------------
+
+    @app.get("/api/projects")
+    def list_projects() -> list[ProjectInfo]:
+        return [ProjectInfo(**item.__dict__) for item in projects.list()]
+
+    @app.post("/api/projects", status_code=201)
+    def create_project(new: NewProject) -> ProjectInfo:
+        space = projects.create(new.name.strip())
+        return ProjectInfo(name=space.name, label=space.label, created=None, signals=0, studies=0)
+
+    @app.delete("/api/projects/{name}", status_code=204)
+    def delete_project(name: str) -> None:
+        projects.delete(name)
 
     # -- AI ----------------------------------------------------------------------
 
@@ -254,7 +288,10 @@ def create_app(workspace: Path, convention: str = "utc", frontend: Path | None =
         return await chat.status()
 
     @app.post("/api/chat")
-    async def chat_answer(request: chatting.Request) -> StreamingResponse:
+    async def chat_answer(request: chatting.Request, x_project: str = Header("")) -> StreamingResponse:
+        request.context.project = unquote(x_project)
+        projects.get(request.context.project)
+
         async def events():
             try:
                 async for event in chat.answer(request):

@@ -48,6 +48,7 @@ node tools/dukascopy/repair.mjs --symbols eurusd                     # fill hole
   - `bars.py` windows of bars read from the Parquet files by row group
   - `studies.py` studies as plain files: panes, drawings, tag, comment, screenshot, history
   - `signals.py` signals with their versions, touches, strategies; each signal and touch has a study in its folder
+  - `projects.py` projects: separate sets of records below `<workspace>/projects/<name>`; the request header `x-project` (percent-encoded) names the one to use, none means the main records at the root
   - `main.py` HTTP API under `/api`, serves the built frontend
 - `src/candle_viewer/ai/` – `mcp_server.py` the MCP server (mcp 2, `MCPServer`), `chat.py` the chat: local OpenAI-compatible model, `claude -p` and `codex exec` as subprocesses with the MCP server attached, answers streamed as server-sent events; settings in `<workspace>/ai.json`
 - `src/candle_viewer/screen/` – screens: `market.py` what a script may see (bars up to a cut), `model.py` `Found`, `scripts.py` discovery, `runner.py` run, publish as candidates, look-ahead `check`, `cli.py`

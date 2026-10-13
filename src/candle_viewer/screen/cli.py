@@ -8,7 +8,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..app.signals import SignalStore
+from ..app.projects import Projects
 from ..market.cli import DEFAULT_WORKSPACE
 from ..market.sessions import CONVENTIONS
 from . import runner, scripts
@@ -30,7 +30,8 @@ def _params(items: list[str] | None) -> dict:
 
 
 def _list(args: argparse.Namespace) -> int:
-    for screen in scripts.discover(Path(args.workspace).expanduser()).values():
+    workspace = Path(args.workspace).expanduser()
+    for screen in scripts.discover(workspace, Projects(workspace).get(args.project).screen_dirs).values():
         where = "shipped" if screen.shipped else str(screen.source)
         print(f"{screen.name:20} {screen.title}  [{where}]  params={screen.params}")
     return 0
@@ -38,9 +39,10 @@ def _list(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     workspace = Path(args.workspace).expanduser()
-    screen = scripts.get(workspace, args.screen)
+    space = Projects(workspace).get(args.project)
+    screen = scripts.get(workspace, args.screen, space.screen_dirs)
     dataset = runner.dataset_of(workspace, args.convention)
-    signals = SignalStore(workspace / "signals")
+    signals = space.signals
     for symbol in args.symbols:
         found = runner.run(screen, dataset, symbol, _params(args.param))
         if args.dry_run:
@@ -55,7 +57,7 @@ def _run(args: argparse.Namespace) -> int:
 
 def _check(args: argparse.Namespace) -> int:
     workspace = Path(args.workspace).expanduser()
-    screen = scripts.get(workspace, args.screen)
+    screen = scripts.get(workspace, args.screen, Projects(workspace).get(args.project).screen_dirs)
     dataset = runner.dataset_of(workspace, args.convention)
     failed = False
     for symbol in args.symbols:
@@ -72,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="candle-screen", description="Run the screens that look for signals, and check them for looking ahead.")
     parser.add_argument("--workspace", default=str(DEFAULT_WORKSPACE))
     parser.add_argument("--convention", choices=CONVENTIONS, default="utc")
+    parser.add_argument("--project", default="", help="project whose records to work on (default: the records at the root of the workspace)")
     commands = parser.add_subparsers(dest="command", required=True)
 
     listing = commands.add_parser("list", help="the screens that can be run")

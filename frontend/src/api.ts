@@ -1,3 +1,4 @@
+import { projectHeader } from './project';
 import type {
   AiSettings,
   Availability,
@@ -8,6 +9,7 @@ import type {
   NewSignal,
   NewTouch,
   NewVersion,
+  ProjectInfo,
   ScreenInfo,
   ScreenOutcome,
   ScreenReport,
@@ -32,7 +34,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init);
+  const response = await fetch(path, { ...init, headers: { ...projectHeader(), ...(init?.headers as Record<string, string> | undefined) } });
   if (!response.ok) {
     const text = await response.text();
     let detail = text;
@@ -65,7 +67,7 @@ export interface BarsQuery {
 const home = (kind: SubjectKind, id: string) => `/api/${kind === 'signal' ? 'signals' : 'touches'}/${id}`;
 
 /** What this interface asks of the program; see API in src/candle_viewer/app/main.py. */
-export const API = 3;
+export const API = 4;
 
 export const api = {
   meta: () => request<Meta>('/api/meta'),
@@ -101,13 +103,18 @@ export const api = {
   runScreen: (name: string, symbol: string, params: Record<string, unknown> = {}) => request<ScreenOutcome>(`/api/screens/${name}/run`, json('POST', { symbol, params })),
   checkScreen: (name: string, symbol: string, params: Record<string, unknown> = {}) => request<ScreenReport>(`/api/screens/${name}/check`, json('POST', { symbol, params })),
 
+  projects: () => request<ProjectInfo[]>('/api/projects'),
+  createProject: (name: string) => request<ProjectInfo>('/api/projects', json('POST', { name })),
+  removeProject: (name: string) => request<void>(`/api/projects/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+
   aiSettings: () => request<AiSettings>('/api/ai/settings'),
   saveAiSettings: (settings: AiSettings) => request<AiSettings>('/api/ai/settings', json('PUT', settings)),
   aiStatus: () => request<Availability[]>('/api/ai/status'),
 
   /** Asks the assistant; each event arrives as it is streamed. Stops when `stop` is aborted. */
   async chat(body: ChatRequest, onEvent: (event: ChatEvent) => void, stop: AbortSignal): Promise<void> {
-    const response = await fetch('/api/chat', { ...json('POST', body), signal: stop });
+    const init = json('POST', body);
+    const response = await fetch('/api/chat', { ...init, headers: { ...projectHeader(), ...(init.headers as Record<string, string>) }, signal: stop });
     if (!response.ok || !response.body) throw new ApiError(response.status, await response.text());
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

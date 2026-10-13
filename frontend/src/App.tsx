@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { API, api } from './api';
+import { setProject } from './project';
 import { parseRoute } from './route';
 import { ChatWindow } from './windows/ChatWindow';
 import { MainWindow } from './windows/MainWindow';
@@ -11,7 +12,12 @@ type Program = 'unknown' | 'fits' | 'older' | 'newer' | 'silent';
 
 /** The page is one of two windows, told apart by what follows the # in its address. */
 export function App() {
-  const [route, setRoute] = useState(() => parseRoute(window.location.hash));
+  const [route, setRoute] = useState(() => {
+    const parsed = parseRoute(window.location.hash);
+    // A window opened from another one works on the project named in its address.
+    if (parsed.project !== null) setProject(parsed.project);
+    return parsed;
+  });
   const [program, setProgram] = useState<Program>('unknown');
 
   useEffect(() => {

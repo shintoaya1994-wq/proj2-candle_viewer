@@ -15,6 +15,7 @@ import { StudyPanel, type Facts } from '../components/StudyPanel';
 import { TextDialog } from '../components/TextDialog';
 import { fromInput, modelsOf, toInput } from '../format';
 import { formatRoute, openStudy, type StudyRoute } from '../route';
+import { currentProject, here } from '../project';
 import { remembered } from '../settings';
 import { STUDY_TIMEFRAMES, TIMEFRAMES, timeframe as timeframeInfo } from '../timeframes';
 import type { Anchor, DrawingState, IndicatorState, LayoutState, Meta, Signal, SignalChanges, SignalVersion, StrategyText, Study, StudyContent, Touch } from '../types';
@@ -187,7 +188,7 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
 
   useEffect(() => {
     if (!subject) return;
-    document.title = `${subject.symbol.toUpperCase()} · ${tag.trim() || KINDS[route.kind]} · K 线研究`;
+    document.title = `${subject.symbol.toUpperCase()} · ${tag.trim() || KINDS[route.kind]}${currentProject() ? ` · ${currentProject()}` : ''} · K 线研究`;
   }, [subject, tag, route.kind]);
 
   // What is saved about the signal in another window shows here at once.
@@ -205,6 +206,7 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
   useEffect(() => {
     window.candleViewer = {
       window: 'study',
+      project: here(),
       panes: () => Object.fromEntries(handles.current),
       drawings: () => board.all(),
       loaded: () => panes.length > 0 && panes.every((pane) => (handles.current.get(pane.key)?.bars() ?? 0) > 0),
@@ -332,7 +334,7 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
           window.close();
           // A window the user opened themselves cannot be closed by the page; it goes to the main window instead.
           window.setTimeout(() => {
-            window.location.hash = formatRoute({ window: 'main' });
+            window.location.hash = formatRoute({ window: 'main', project: here() });
           }, 300);
         }
       } catch (error) {
@@ -405,7 +407,7 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
 
   const openTouch = (hit: MarkHit) => {
     if (hit.touch === null) return;
-    if (!openStudy({ window: 'study', kind: 'touch', id: hit.touch })) setStatus('浏览器拦截了新窗口。请允许本页面弹出窗口。');
+    if (!openStudy({ window: 'study', kind: 'touch', id: hit.touch, project: here() })) setStatus('浏览器拦截了新窗口。请允许本页面弹出窗口。');
   };
 
   useEffect(() => {
@@ -571,7 +573,7 @@ export function StudyWindow({ route }: { route: StudyRoute }) {
           }}
           onRestoreShape={restoreShape}
           onOpenSignal={() => {
-            if (subject.signal && !openStudy({ window: 'study', kind: 'signal', id: subject.signal.id })) setStatus('浏览器拦截了新窗口。请允许本页面弹出窗口。');
+            if (subject.signal && !openStudy({ window: 'study', kind: 'signal', id: subject.signal.id, project: here() })) setStatus('浏览器拦截了新窗口。请允许本页面弹出窗口。');
           }}
           onStrategies={(value) => {
             setStrategies(value);

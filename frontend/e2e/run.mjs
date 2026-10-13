@@ -138,7 +138,7 @@ try {
   const dialogs = [];
 
   function watch(page) {
-    page.on('console', (message) => message.type() === 'error' && problems.push(message.text()));
+    page.on('console', (message) => message.type() === 'error' && problems.push(`${message.text()} ${message.location()?.url ?? ''}`));
     page.on('pageerror', (error) => problems.push(error.message));
     page.on('dialog', (dialog) => {
       dialogs.push(dialog.message());
@@ -633,6 +633,35 @@ try {
   assert.equal(await page.$eval(test('timeframe-h4'), (element) => element.className), 'on');
   await waitFor('the signals', async () => (await signals(page)).length === 2);
 
+  step('a project keeps records of its own over the same bars');
+  assert.equal(await value(page, 'project'), '');
+  await page.select(test('project'), '+new');
+  await page.waitForSelector(test('text-dialog'));
+  await page.type(test('text-input'), '试验');
+  await page.click(test('text-ok'));
+  await waitFor('the project', async () => (await value(page, 'project')) === '试验');
+  await waitFor('no signals in the new project', async () => (await signals(page)).length === 0 && (await page.$$(`${test('signals')} .row`)).length === 0);
+  const triedBar = await ask(page, 'main', 'barAt', 500);
+  await page.click(test('mark-point'));
+  await click(page, 'main', triedBar.x, triedBar.highY - 6);
+  const [tried] = await waitFor('the signal of the project', async () => ((await signals(page)).length === 1 ? signals(page) : null));
+  assert.ok(fs.existsSync(path.join(workspace, 'projects', '试验', 'signals', 'testfx', tried.id, 'signal.json')));
+  assert.ok(!fs.existsSync(path.join(signalsFolder, tried.id)), 'the main records are untouched');
+  const triedAt = (await ask(page, 'main', 'figuresOf', markOf(tried))).shape;
+  const triedStudy = await opening(page, () => click(page, 'main', triedAt.x, triedAt.y));
+  assert.ok((await triedStudy.title()).includes('试验'), await triedStudy.title());
+  await type(triedStudy, 'tag', '项目里的点');
+  await finish(triedStudy);
+  assert.ok(fs.existsSync(path.join(workspace, 'projects', '试验', 'signals', 'testfx', tried.id, 'study.json')));
+  await page.select(test('project'), '');
+  await waitFor('the main records again', async () => (await signals(page)).length === 2);
+  await page.select(test('project'), '试验');
+  await waitFor('the project again', async () => (await signals(page)).length === 1);
+  assert.ok((await text(page, `signal-${tried.id}`)).includes('项目里的点'));
+  await page.click(test('remove-project'));
+  await waitFor('the main records after the removal', async () => (await value(page, 'project')) === '' && (await signals(page)).length === 2);
+  assert.ok(fs.readdirSync(path.join(workspace, 'projects', '.trash')).some((name) => name.startsWith('试验-')));
+
   step('the chat window knows what the user is looking at and streams the answer of the model');
   await page.click(`${test(`signal-${peak.id}`)} .open`);
   const chatOpened = new Promise((resolve) => page.once('popup', resolve));
@@ -707,7 +736,7 @@ try {
   assert.deepEqual(fs.readdirSync(signalsFolder), [range.id]);
   assert.ok(fs.readdirSync(path.join(workspace, 'signals', '.trash')).some((name) => name.startsWith(peak.id)));
 
-  assert.deepEqual(problems, [], 'the browser reported errors');
+  assert.deepEqual(problems, [], `the browser reported errors:\n${problems.join('\n')}`);
 } catch (error) {
   failure = error;
   if (shots) {
@@ -730,6 +759,7 @@ if (failure !== null) {
   console.error(`\n${failure.stack ?? failure}`);
   console.error(`\nworkspace kept for inspection: ${workspace}`);
   if (serverLog.includes('Traceback') || serverLog.includes('ERROR')) console.error(`\nserver log:\n${serverLog}`);
+  console.error(`\nrequests the server refused:\n${serverLog.split('\n').filter((line) => / (404|422|500) /.test(line)).join('\n')}`);
   process.exit(1);
 }
 console.log(`\n${steps.length} steps passed`);

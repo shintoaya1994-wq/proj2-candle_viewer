@@ -53,16 +53,17 @@ def _load(path: Path, shipped_: bool) -> Screen:
     return Screen(name, str(getattr(module, "TITLE", name)), dict(params), module, path, shipped_)
 
 
-def discover(workspace: Path) -> dict[str, Screen]:
-    """Screens by name: the user's own first, then the shipped ones they do not replace."""
+def discover(workspace: Path, folders: list[Path] | None = None) -> dict[str, Screen]:
+    """Screens by name: the user's own first (the folders given, or ``<workspace>/screens``), then the shipped ones they do not replace."""
     found: dict[str, Screen] = {}
-    own = Path(workspace) / "screens"
-    if own.is_dir():
+    for own in folders if folders is not None else [Path(workspace) / "screens"]:
+        if not own.is_dir():
+            continue
         for path in sorted(own.glob("*.py")):
             if path.name.startswith("_"):
                 continue
             screen = _load(path, False)
-            found[screen.name] = screen
+            found.setdefault(screen.name, screen)
     for path in sorted(Path(shipped.__file__).parent.glob("*.py")):
         if path.name.startswith("_"):
             continue
@@ -71,8 +72,8 @@ def discover(workspace: Path) -> dict[str, Screen]:
     return found
 
 
-def get(workspace: Path, name: str) -> Screen:
-    screens = discover(workspace)
+def get(workspace: Path, name: str, folders: list[Path] | None = None) -> Screen:
+    screens = discover(workspace, folders)
     if name not in screens:
         raise UnknownScreen(name)
     return screens[name]

@@ -16,8 +16,8 @@ from pathlib import Path
 from mcp.server.mcpserver import MCPServer
 
 from ..app.bars import BarStore
-from ..app.signals import Anchor, Changes, NewSignal, NewTouch, SignalStore
-from ..app.studies import StudyStore
+from ..app.projects import Projects
+from ..app.signals import Anchor, Changes, NewSignal, NewTouch
 from ..market import store
 from ..market.cli import DEFAULT_WORKSPACE
 from ..screen import runner, scripts
@@ -41,19 +41,22 @@ def _ms(text: str | int | None) -> int | None:
     return int(datetime.strptime(stamp, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def build(workspace: Path, convention: str = "utc") -> MCPServer:
+def build(workspace: Path, convention: str = "utc", project: str = "") -> MCPServer:
     workspace = Path(workspace).expanduser()
     dataset = store.dataset_dir(workspace, convention)
     bars = BarStore(dataset)
-    signals = SignalStore(workspace / "signals")
-    studies = StudyStore(workspace / "studies")
+    space = Projects(workspace).get(project)
+    signals = space.signals
+    studies = space.studies
+    folders = space.screen_dirs
     server = MCPServer(
         "candle-viewer",
         instructions=(
             "Market bars and research records of a discretionary FX trader. Times are UTC. "
             "Signals, touches of signals and strategies after a touch are three separate records. "
             "A screen is a Python script that looks for signals; what it finds becomes candidate signals the user confirms or rejects. "
-            "Write screens into the workspace with save_screen and run check_screen before run_screen. See the screens guide (resource guide://screens)."
+            "Write screens with save_screen and run check_screen before run_screen. See the screens guide (resource guide://screens). "
+            + (f"The records in use are those of the project '{space.label}'." if project else "The records in use are the user's main ones.")
         ),
     )
 
@@ -137,24 +140,24 @@ def build(workspace: Path, convention: str = "utc") -> MCPServer:
     @server.tool()
     def list_screens() -> str:
         """The screens that can be run: name, title, params, where the source is."""
-        return json.dumps([{"name": s.name, "title": s.title, "params": s.params, "source": str(s.source)} for s in scripts.discover(workspace).values()], ensure_ascii=False)
+        return json.dumps([{"name": s.name, "title": s.title, "params": s.params, "source": str(s.source)} for s in scripts.discover(workspace, folders).values()], ensure_ascii=False)
 
     @server.tool()
     def read_screen(name: str) -> str:
         """The source of a screen."""
-        return scripts.get(workspace, name).source.read_text(encoding="utf-8")
+        return scripts.get(workspace, name, folders).source.read_text(encoding="utf-8")
 
     @server.tool()
     def save_screen(name: str, source: str) -> str:
         """Writes a screen into the workspace (screens/<name>.py) and loads it once to see that it is well formed."""
         if not scripts._NAME.match(name):
             raise ValueError("name: lowercase letters, digits and underscores")
-        folder = workspace / "screens"
+        folder = folders[0]
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{name}.py"
         path.write_text(source, encoding="utf-8")
         try:
-            screen = scripts.get(workspace, name)
+            screen = scripts.get(workspace, name, folders)
         except Exception as error:
             path.unlink(missing_ok=True)
             raise ValueError(f"the screen does not load: {error}") from error
@@ -163,7 +166,7 @@ def build(workspace: Path, convention: str = "utc") -> MCPServer:
     @server.tool()
     def run_screen(name: str, symbol: str, params: dict | None = None, dry_run: bool = False) -> str:
         """Runs a screen on a symbol. Without dry_run what it finds becomes candidate signals."""
-        screen = scripts.get(workspace, name)
+        screen = scripts.get(workspace, name, folders)
         found = runner.run(screen, dataset, symbol, params)
         if dry_run:
             lines = [f"{item.key} {item.shape} {item.timeframe} {_when(item.anchors[0][0])} known {_when(item.known_at)} {item.note}" for item in found[:200]]
@@ -174,7 +177,7 @@ def build(workspace: Path, convention: str = "utc") -> MCPServer:
     @server.tool()
     def check_screen(name: str, symbol: str, params: dict | None = None) -> str:
         """Reruns a screen on cut data to see whether it looks ahead. Run this before run_screen."""
-        report = runner.check(scripts.get(workspace, name), dataset, symbol, params)
+        report = runner.check(scripts.get(workspace, name, folders), dataset, symbol, params)
         lines = [f"{item.kind} at {_when(item.cutoff)}: {item.key} {item.detail}" for item in report.differences[:50]]
         return f"{'passed' if report.passed else 'FAILED: the screen looks ahead'}; {report.found} found, {report.cutoffs} cutoffs\n" + "\n".join(lines)
 
@@ -191,8 +194,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="candle-viewer-mcp", description="MCP server over the bars and records, on stdio.")
     parser.add_argument("--workspace", default=str(DEFAULT_WORKSPACE))
     parser.add_argument("--convention", default="utc")
+    parser.add_argument("--project", default="", help="project whose records to work on")
     args = parser.parse_args(argv)
-    build(Path(args.workspace), args.convention).run("stdio")
+    build(Path(args.workspace), args.convention, args.project).run("stdio")
     return 0
 
 

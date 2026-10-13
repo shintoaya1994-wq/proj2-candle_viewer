@@ -15,9 +15,11 @@ import { SignalPanel, matches } from '../components/SignalPanel';
 import { describe, moment } from '../format';
 import { moment as when } from '../format';
 import { openStudy, type ChatRoute, type StudyRoute } from '../route';
+import { MAIN, currentProject, here, projectLabel, setProject } from '../project';
 import { remember, remembered, type Settings } from '../settings';
+import { TextDialog } from '../components/TextDialog';
 import { TIMEFRAMES } from '../timeframes';
-import type { DrawingState, Meta, ScreenInfo, Shape, Signal, Status, StudySummary } from '../types';
+import type { DrawingState, Meta, ProjectInfo, ScreenInfo, Shape, Signal, Status, StudySummary } from '../types';
 import { TIMEZONES } from './timezones';
 
 /** A way to mark a signal on the chart by hand. */
@@ -43,6 +45,8 @@ type Task = { kind: 'signal'; tool: SignalTool } | { kind: 'touch'; signal: stri
 
 const DEFAULTS: Settings = { symbol: null, timeframe: 'd1', timezone: 'UTC', indicators: [], magnet: true };
 const START: PaneStart = { view: { barSpace: null, offsetRight: null, rightTimestamp: null }, focus: null };
+/** The choice in the list of projects that makes a new one. */
+const NEW = '+new'; // no project can be named so: names begin with a letter or a digit
 const BLOCKED = '浏览器拦截了新窗口。请在地址栏右侧允许本页面弹出窗口，然后再点一次。';
 
 export function MainWindow() {
@@ -57,6 +61,9 @@ export function MainWindow() {
   const [filter, setFilter] = useState('');
   const [hideRejected, setHideRejected] = useState(true);
   const [screens, setScreens] = useState<ScreenInfo[]>([]);
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [project, setProjectState] = useState(currentProject);
+  const [naming, setNaming] = useState(false);
   const [screening, setScreening] = useState<string | null>(null);
   const [status, setStatus] = useState('正在读取数据…');
   const [bars, setBars] = useState(0);
@@ -73,8 +80,10 @@ export function MainWindow() {
   useEffect(() => remember(settings), [settings]);
 
   const reload = useCallback(async (name: string) => {
+    // An answer that arrives after the symbol or the project has changed is for another window state.
+    const project = currentProject();
     const [found, free] = await Promise.all([api.signals(name), api.studies()]);
-    if (symbolName.current !== name) return;
+    if (symbolName.current !== name || currentProject() !== project) return;
     setSignals(found);
     setStudies(free);
   }, []);
@@ -89,11 +98,44 @@ export function MainWindow() {
       .catch(fail('读取数据'));
   }, []);
 
+  const loadProjects = useCallback(() => api.projects().then(setProjects).catch(fail('读取项目')), []);
+
   useEffect(() => {
-    document.title = 'K 线研究工作台';
+    document.title = project ? `${project} · K 线研究工作台` : 'K 线研究工作台';
     api.screens().then(setScreens).catch(fail('读取筛选脚本'));
+    void loadProjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [project]);
+
+  /** Another set of records: the signals and studies are read anew. */
+  const switchProject = (name: string) => {
+    setProject(name);
+    setProjectState(name);
+    setChosen(null);
+    setTask(null);
+    if (symbol) reload(symbol.name).catch(fail('读取信号'));
+  };
+
+  const createProject = (name: string | null) => {
+    setNaming(false);
+    if (!name || name.trim() === '') return;
+    api
+      .createProject(name.trim())
+      .then((made) => switchProject(made.name))
+      .catch(fail('新建项目'));
+  };
+
+  const removeProject = () => {
+    if (project === MAIN || !window.confirm(`删除项目“${project}”？它的信号和记录会移到回收文件夹，不会被销毁。`)) return;
+    // Back to the main records first, so that nothing asks for the project while it goes.
+    const gone = project;
+    setProject(MAIN);
+    setProjectState(MAIN);
+    api
+      .removeProject(gone)
+      .then(() => switchProject(MAIN))
+      .catch(fail('删除项目'));
+  };
 
   // The signals of the symbol; read again whenever another window has saved something.
   useEffect(() => {
@@ -284,7 +326,7 @@ export function MainWindow() {
     setChosen(signal.id);
     setHover(null);
     const touch = hit.mark.kind === 'touch' ? hit.mark.id : hit.touch;
-    open(touch === null ? { window: 'study', kind: 'signal', id: signal.id } : { window: 'study', kind: 'touch', id: touch });
+    open(touch === null ? { window: 'study', kind: 'signal', id: signal.id, project: here() } : { window: 'study', kind: 'touch', id: touch, project: here() });
   };
 
   const menuItems = (hit: MarkHit): MenuItem[] => {
@@ -293,12 +335,12 @@ export function MainWindow() {
     const touch = hit.mark.kind === 'touch' ? hit.mark.id : hit.touch;
     if (touch !== null) {
       return [
-        { name: 'open', label: '打开触及的研究窗口', run: () => open({ window: 'study', kind: 'touch', id: touch }) },
+        { name: 'open', label: '打开触及的研究窗口', run: () => open({ window: 'study', kind: 'touch', id: touch, project: here() }) },
         { name: 'remove', label: '删除这次触及', danger: true, run: () => removeTouch(touch) },
       ];
     }
     return [
-      { name: 'open', label: '打开研究窗口', run: () => open({ window: 'study', kind: 'signal', id: signal.id }) },
+      { name: 'open', label: '打开研究窗口', run: () => open({ window: 'study', kind: 'signal', id: signal.id, project: here() }) },
       { name: 'touch', label: '添加触及', run: () => setTask({ kind: 'touch', signal: signal.id }) },
       { name: 'remove', label: '删除信号', danger: true, run: () => removeSignal(signal.id) },
     ];
@@ -321,6 +363,22 @@ export function MainWindow() {
   return (
     <div className="app main-window" data-testid="main-window">
       <header className="toolbar">
+        <div className="group">
+          <select value={project} data-testid="project" title="项目：一套独立的信号和记录，行情共用。试新想法时另开一个，不和已知的信号混在一起" onChange={(event) => (event.target.value === NEW ? setNaming(true) : switchProject(event.target.value))}>
+            {(projects.length > 0 ? projects : [{ name: MAIN, label: projectLabel(MAIN), created: null, signals: 0, studies: 0 }]).map((item) => (
+              <option key={item.name} value={item.name}>
+                {projectLabel(item.name)}
+                {projects.length > 0 ? `（${item.signals}）` : ''}
+              </option>
+            ))}
+            <option value={NEW}>新建项目…</option>
+          </select>
+          {project !== MAIN && (
+            <button type="button" className="plain" data-testid="remove-project" title="删除这个项目（移到回收文件夹）" onClick={removeProject}>
+              删除项目
+            </button>
+          )}
+        </div>
         <div className="group">
           <select value={symbol.name} data-testid="symbol" onChange={(event) => alter({ symbol: event.target.value })}>
             {meta.symbols.map((item) => (
@@ -354,7 +412,7 @@ export function MainWindow() {
         </div>
 
         <div className="group">
-          <button type="button" data-testid="open-chat" title="和 AI 讨论正在看的东西；它也能写筛选脚本、标记候选信号" onClick={() => open({ window: 'chat', symbol: symbol.name, timeframe, signal: chosen })}>
+          <button type="button" data-testid="open-chat" title="和 AI 讨论正在看的东西；它也能写筛选脚本、标记候选信号" onClick={() => open({ window: 'chat', symbol: symbol.name, timeframe, signal: chosen, project: here() })}>
             AI 对话
           </button>
           <ScreenMenu screens={screens} busy={screening} onRun={runScreen} onCheck={checkScreen} />
@@ -418,18 +476,19 @@ export function MainWindow() {
           onHideRejected={setHideRejected}
           onStatus={setStatus_}
           onChoose={choose}
-          onOpen={(id) => open({ window: 'study', kind: 'signal', id })}
+          onOpen={(id) => open({ window: 'study', kind: 'signal', id, project: here() })}
           onAddTouch={(id) => setTask({ kind: 'touch', signal: id })}
           onRemove={removeSignal}
-          onOpenTouch={(id) => open({ window: 'study', kind: 'touch', id })}
+          onOpenTouch={(id) => open({ window: 'study', kind: 'touch', id, project: here() })}
           onRemoveTouch={removeTouch}
-          onOpenStudy={(id) => open({ window: 'study', kind: 'free', id, symbol: null, timeframe: null, focus: null })}
+          onOpenStudy={(id) => open({ window: 'study', kind: 'free', id, symbol: null, timeframe: null, focus: null, project: here() })}
           onRemoveStudy={removeStudy}
-          onNewStudy={() => open({ window: 'study', kind: 'free', id: null, symbol: symbol.name, timeframe, focus: chart.current?.snapshot().center ?? null })}
+          onNewStudy={() => open({ window: 'study', kind: 'free', id: null, symbol: symbol.name, timeframe, focus: chart.current?.snapshot().center ?? null, project: here() })}
         />
       </main>
 
       {hover && !menu && !task && <Hover hit={hover.hit} at={hover.at} signals={signals} />}
+      {naming && <TextDialog title="新项目的名字" text="" onDone={createProject} />}
       {menu && <Menu at={menu.at} items={menuItems(menu.hit)} onClose={() => setMenu(null)} />}
     </div>
   );

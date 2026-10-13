@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from ..app.bars import BarStore
-from ..app.signals import SignalStore
+from ..app.projects import Projects, Space
 from ..app.studies import write_json
 
 Provider = Literal["local", "claude", "codex"]
@@ -79,6 +79,7 @@ class Context(Model):
     symbol: str | None = None
     timeframe: str | None = None
     signal: str | None = None
+    project: str = ""
 
 
 class Request(Model):
@@ -117,10 +118,10 @@ ABOUT = (
 
 
 class Chat:
-    def __init__(self, workspace: Path, bars: BarStore, signals: SignalStore, convention: str = "utc", transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(self, workspace: Path, bars: BarStore, projects: Projects, convention: str = "utc", transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.workspace = Path(workspace)
         self.bars = bars
-        self.signals = signals
+        self.projects = projects
         self.convention = convention
         self.transport = transport
         self.sessions: dict[tuple[str, str], str] = {}
@@ -171,13 +172,15 @@ class Chat:
 
     def briefing(self, context: Context, with_bars: bool) -> str:
         parts = [ABOUT]
+        space = self.projects.get(context.project)
+        parts.append(f"记录属于项目“{space.label}”。" if context.project else "记录是用户的主记录。")
         if context.symbol:
             parts.append(f"用户正在看 {context.symbol.upper()}，周期 {context.timeframe or '?'}。")
         if context.signal:
             try:
-                signal = self.signals.get(context.signal)
+                signal = space.signals.get(context.signal)
                 current = signal.current
-                study = self.signals.study("signal", context.signal)
+                study = space.signals.study("signal", context.signal)
                 parts.append(
                     f"选中的信号 {signal.id}：{current.shape}，周期 {current.timeframe}，锚点 {[(a.timestamp, a.value) for a in current.anchors]}，"
                     f"状态 {signal.status}，来源 {signal.origin}，模型 {signal.models}，快评“{signal.note.tag}”，说明“{current.note}”，"
@@ -246,20 +249,21 @@ class Chat:
 
     # -- the commands --------------------------------------------------------------
 
-    def _mcp_config(self) -> dict:
+    def _mcp_config(self, project: str) -> dict:
         command = str(Path(sys.executable).parent / "candle-viewer-mcp")
-        return {"command": command, "args": ["--workspace", str(self.workspace), "--convention", self.convention]}
+        return {"command": command, "args": ["--workspace", str(self.workspace), "--convention", self.convention, "--project", project]}
 
-    def _cwd(self) -> Path:
-        folder = self.workspace / "screens"
-        folder.mkdir(parents=True, exist_ok=True)
-        return self.workspace
+    def _cwd(self, project: str) -> Path:
+        """The commands work in the folder of the project, where its screens go."""
+        space = self.projects.get(project)
+        (space.root / "screens").mkdir(parents=True, exist_ok=True)
+        return space.root
 
     async def _claude(self, path: str, request: Request) -> AsyncIterator[str]:
         question = request.messages[-1].content
         key = (request.chat, "claude")
         with tempfile.NamedTemporaryFile("w", suffix=".json", prefix="candle-mcp-", delete=False) as handle:
-            json.dump({"mcpServers": {"candle-viewer": self._mcp_config()}}, handle)
+            json.dump({"mcpServers": {"candle-viewer": self._mcp_config(request.context.project)}}, handle)
             config = handle.name
         args = [path, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
                 "--mcp-config", config, "--allowedTools", TOOL_PATTERN, "--permission-mode", "acceptEdits",
@@ -267,7 +271,7 @@ class Chat:
         if key in self.sessions:
             args += ["--resume", self.sessions[key]]
         try:
-            async for line in self._run(args, question):
+            async for line in self._run(args, question, request.context.project):
                 try:
                     event = json.loads(line)
                 except json.JSONDecodeError:
@@ -295,16 +299,16 @@ class Chat:
 
     async def _codex(self, path: str, request: Request) -> AsyncIterator[str]:
         key = (request.chat, "codex")
-        mcp = self._mcp_config()
+        mcp = self._mcp_config(request.context.project)
         prompt = request.messages[-1].content
         if key not in self.sessions:
             prompt = f"{self.briefing(request.context, with_bars=False)}\n\n{prompt}"
         # Nobody is there to approve while the answer streams, so the tools of this application run without asking.
-        common = ["--json", "--skip-git-repo-check", "-C", str(self._cwd()), "--approve-for-me",
+        common = ["--json", "--skip-git-repo-check", "-C", str(self._cwd(request.context.project)), "--approve-for-me",
                   "-c", f'mcp_servers.candle-viewer.command="{mcp["command"]}"',
                   "-c", f"mcp_servers.candle-viewer.args={json.dumps(mcp['args'])}"]
         args = [path, "exec", "resume", self.sessions[key], *common, "-"] if key in self.sessions else [path, "exec", *common, "-"]
-        async for line in self._run(args, prompt):
+        async for line in self._run(args, prompt, request.context.project):
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
@@ -324,11 +328,11 @@ class Chat:
                 yield _event("error", message=str(event.get("message") or event.get("error") or event)[:1000])
         yield _event("done", session=self.sessions.get(key))
 
-    async def _run(self, args: list[str], stdin: str) -> AsyncIterator[str]:
+    async def _run(self, args: list[str], stdin: str, project: str) -> AsyncIterator[str]:
         """Lines a command prints while it works; the command is stopped if the reader goes away."""
         env = {**os.environ, "CANDLE_WORKSPACE": str(self.workspace)}
         process = await asyncio.create_subprocess_exec(
-            *args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self._cwd(), env=env,
+            *args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self._cwd(project), env=env,
         )
         assert process.stdin and process.stdout and process.stderr
         process.stdin.write(stdin.encode("utf-8"))

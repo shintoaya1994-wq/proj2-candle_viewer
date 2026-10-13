@@ -3,12 +3,12 @@
 export type StudyKind = 'signal' | 'touch' | 'free';
 
 export type Route =
-  | { window: 'main' }
-  | { window: 'study'; kind: 'signal' | 'touch'; id: string }
+  | { window: 'main'; project: string | null }
+  | { window: 'study'; kind: 'signal' | 'touch'; id: string; project: string | null }
   /** A study that stands on its own; without an id it is a new one. */
-  | { window: 'study'; kind: 'free'; id: string | null; symbol: string | null; timeframe: string | null; focus: number | null }
+  | { window: 'study'; kind: 'free'; id: string | null; symbol: string | null; timeframe: string | null; focus: number | null; project: string | null }
   /** The chat with an assistant, told what the user is looking at. */
-  | { window: 'chat'; symbol: string | null; timeframe: string | null; signal: string | null };
+  | { window: 'chat'; symbol: string | null; timeframe: string | null; signal: string | null; project: string | null };
 
 export type StudyRoute = Extract<Route, { window: 'study' }>;
 export type ChatRoute = Extract<Route, { window: 'chat' }>;
@@ -16,14 +16,12 @@ export type ChatRoute = Extract<Route, { window: 'chat' }>;
 export function parseRoute(hash: string): Route {
   const [path = '', query = ''] = hash.replace(/^#\/?/, '').split('?');
   const [first, kind, id] = path.split('/');
-  if (first === 'chat') {
-    const params = new URLSearchParams(query);
-    return { window: 'chat', symbol: params.get('symbol'), timeframe: params.get('timeframe'), signal: params.get('signal') };
-  }
-  if (first !== 'study') return { window: 'main' };
-  if ((kind === 'signal' || kind === 'touch') && id) return { window: 'study', kind, id };
+  const params = new URLSearchParams(query);
+  const project = params.get('project');
+  if (first === 'chat') return { window: 'chat', symbol: params.get('symbol'), timeframe: params.get('timeframe'), signal: params.get('signal'), project };
+  if (first !== 'study') return { window: 'main', project };
+  if ((kind === 'signal' || kind === 'touch') && id) return { window: 'study', kind, id, project };
   if (kind === 'free') {
-    const params = new URLSearchParams(query);
     const focus = Number(params.get('focus'));
     return {
       window: 'study',
@@ -32,27 +30,34 @@ export function parseRoute(hash: string): Route {
       symbol: params.get('symbol'),
       timeframe: params.get('timeframe'),
       focus: params.has('focus') && Number.isFinite(focus) ? focus : null,
+      project,
     };
   }
-  return { window: 'main' };
+  return { window: 'main', project };
+}
+
+/** The address with the project added, so that the window it opens works on the same records. */
+function withProject(hash: string, project: string | null): string {
+  if (!project) return hash;
+  return `${hash}${hash.includes('?') ? '&' : '?'}project=${encodeURIComponent(project)}`;
 }
 
 export function formatRoute(route: Route): string {
-  if (route.window === 'main') return '#/';
+  if (route.window === 'main') return withProject('#/', route.project);
   if (route.window === 'chat') {
     const params = new URLSearchParams();
     if (route.symbol) params.set('symbol', route.symbol);
     if (route.timeframe) params.set('timeframe', route.timeframe);
     if (route.signal) params.set('signal', route.signal);
-    return `#/chat?${params}`;
+    return withProject(`#/chat?${params}`, route.project);
   }
-  if (route.kind !== 'free') return `#/study/${route.kind}/${route.id}`;
-  if (route.id !== null) return `#/study/free/${route.id}`;
+  if (route.kind !== 'free') return withProject(`#/study/${route.kind}/${route.id}`, route.project);
+  if (route.id !== null) return withProject(`#/study/free/${route.id}`, route.project);
   const params = new URLSearchParams();
   if (route.symbol) params.set('symbol', route.symbol);
   if (route.timeframe) params.set('timeframe', route.timeframe);
   if (route.focus !== null) params.set('focus', String(route.focus));
-  return `#/study/free/new?${params}`;
+  return withProject(`#/study/free/new?${params}`, route.project);
 }
 
 const opened = new Map<string, Window>();
@@ -63,7 +68,7 @@ let fresh = 0;
  * Returns false where the browser did not allow the window.
  */
 export function openStudy(route: StudyRoute | ChatRoute): boolean {
-  const name = route.window === 'chat' ? 'candle-chat' : route.id === null ? `candle-study-new-${++fresh}` : `candle-study-${route.kind}-${route.id}`;
+  const name = `${route.project ? `${route.project}-` : ''}${route.window === 'chat' ? 'candle-chat' : route.id === null ? `candle-study-new-${++fresh}` : `candle-study-${route.kind}-${route.id}`}`;
   const known = opened.get(name);
   if (known && !known.closed) {
     known.focus();
