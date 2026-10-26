@@ -122,7 +122,7 @@ ABOUT = (
 
 class Chat:
     def __init__(self, workspace: Path, bars: BarStore, projects: Projects, convention: str = "utc", transport: httpx.AsyncBaseTransport | None = None) -> None:
-        self.workspace = Path(workspace)
+        self.workspace = Path(workspace).expanduser().resolve()
         self.bars = bars
         self.projects = projects
         self.convention = convention
@@ -293,8 +293,7 @@ class Chat:
     # -- the commands --------------------------------------------------------------
 
     def _mcp_config(self, project: str) -> dict:
-        command = str(Path(sys.executable).parent / "candle-viewer-mcp")
-        return {"command": command, "args": ["--workspace", str(self.workspace), "--convention", self.convention, "--project", project]}
+        return {"command": sys.executable, "args": ["-m", "candle_viewer.ai.mcp_server", "--workspace", str(self.workspace), "--convention", self.convention, "--project", project]}
 
     def _cwd(self, project: str) -> Path:
         """The commands work in the folder of the project, where its screens go."""
@@ -348,8 +347,8 @@ class Chat:
             prompt = f"{self.briefing(request.context, with_bars=False)}\n\n{prompt}"
         # Nobody is there to approve while the answer streams, so the tools of this application run without asking.
         common = ["--json", "--skip-git-repo-check", "-C", str(self._cwd(request.context.project)), "--approve-for-me",
-                  "-c", f'mcp_servers.candle-viewer.command="{mcp["command"]}"',
-                  "-c", f"mcp_servers.candle-viewer.args={json.dumps(mcp['args'])}"]
+                  "-c", f"mcp_servers.candle-viewer.command={json.dumps(mcp['command'], ensure_ascii=False)}",
+                  "-c", f"mcp_servers.candle-viewer.args={json.dumps(mcp['args'], ensure_ascii=False)}"]
         args = [path, "exec", "resume", self.sessions[key], *common, "-"] if key in self.sessions else [path, "exec", *common, "-"]
         async for line in self._run(args, prompt, request.context.project):
             try:

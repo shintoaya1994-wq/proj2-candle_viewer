@@ -81,7 +81,7 @@ class ScreenReport(Model):
 
 
 def create_app(workspace: Path, convention: str = "utc", frontend: Path | None = FRONTEND, ai_transport=None) -> FastAPI:
-    workspace = Path(workspace).expanduser()
+    workspace = Path(workspace).expanduser().resolve()
     bars = BarStore(store.dataset_dir(workspace, convention))
     projects = Projects(workspace)
     chat = chatting.Chat(workspace, bars, projects, convention, transport=ai_transport)

@@ -10,17 +10,17 @@
 // that file.
 
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { formatOutput, instrumentMetaData, processData, URL_ROOT } from 'dukascopy-node';
 
 import { clientOptions, createClient, log } from './client.mjs';
+import { defaultWorkspace } from '../workspace.mjs';
 
 const HEADER = 'timestamp,open,high,low,close,volume';
 const HOUR = 3_600_000;
-const workspace = path.join(os.homedir(), 'candle_workspace');
+const workspace = defaultWorkspace();
 
 const { values: args } = parseArgs({
   options: {

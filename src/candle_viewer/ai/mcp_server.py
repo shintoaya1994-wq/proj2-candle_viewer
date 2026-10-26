@@ -21,7 +21,7 @@ from ..app.bars import BarStore
 from ..app.projects import Projects
 from ..app.signals import Anchor, Changes, NewSignal, NewTouch
 from ..market import store
-from ..market.cli import DEFAULT_WORKSPACE
+from ..workspace import default_workspace
 from ..screen import runner, scripts
 
 MAX_BARS = 5000
@@ -46,7 +46,7 @@ def _ms(text: str | int | None) -> int | None:
 
 
 def build(workspace: Path, convention: str = "utc", project: str = "") -> MCPServer:
-    workspace = Path(workspace).expanduser()
+    workspace = Path(workspace).expanduser().resolve()
     dataset = store.dataset_dir(workspace, convention)
     bars = BarStore(dataset)
     space = Projects(workspace).get(project)
@@ -202,7 +202,7 @@ def build(workspace: Path, convention: str = "utc", project: str = "") -> MCPSer
         prelude = f"from pathlib import Path\nDATASET = Path({str(dataset)!r})\nWORKSPACE = Path({str(workspace)!r})\nPROJECT = {project!r}\n"
         env = {**os.environ, "CANDLE_WORKSPACE": str(workspace), "CANDLE_DATASET": str(dataset), "CANDLE_PROJECT": project, "PYTHONIOENCODING": "utf-8"}
         try:
-            done = subprocess.run([sys.executable, "-"], input=prelude + code, capture_output=True, text=True, timeout=PYTHON_TIMEOUT, cwd=space.root, env=env)
+            done = subprocess.run([sys.executable, "-"], input=prelude + code, capture_output=True, text=True, encoding="utf-8", timeout=PYTHON_TIMEOUT, cwd=space.root, env=env)
         except subprocess.TimeoutExpired:
             return f"stopped after {PYTHON_TIMEOUT} s"
         output = done.stdout + (f"\n[stderr]\n{done.stderr}" if done.stderr.strip() else "")
@@ -221,7 +221,7 @@ def build(workspace: Path, convention: str = "utc", project: str = "") -> MCPSer
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="candle-viewer-mcp", description="MCP server over the bars and records, on stdio.")
-    parser.add_argument("--workspace", default=str(DEFAULT_WORKSPACE))
+    parser.add_argument("--workspace", default=str(default_workspace()))
     parser.add_argument("--convention", default="utc")
     parser.add_argument("--project", default="", help="project whose records to work on")
     args = parser.parse_args(argv)

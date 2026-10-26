@@ -17,7 +17,6 @@
 
 import { createReadStream, createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { parseArgs } from 'node:util';
@@ -25,6 +24,7 @@ import { parseArgs } from 'node:util';
 import { formatOutput, generateUrls, instrumentMetaData, normaliseDates, processData } from 'dukascopy-node';
 
 import { clientOptions, createClient, day, log } from './client.mjs';
+import { defaultWorkspace } from '../workspace.mjs';
 
 const HEADER = 'timestamp,open,high,low,close,volume';
 const START_FIELD = { m1: 'startDayForMinuteCandles', h1: 'startMonthForHourlyCandles', d1: 'startYearForDailyCandles' };
@@ -35,7 +35,7 @@ const { values: args } = parseArgs({
     symbols: { type: 'string' },
     timeframes: { type: 'string', default: 'd1,h1,m1' },
     to: { type: 'string', default: new Date().toISOString().slice(0, 10) },
-    out: { type: 'string', default: path.join(os.homedir(), 'candle_workspace', 'raw', 'dukascopy') },
+    out: { type: 'string', default: path.join(defaultWorkspace(), 'raw', 'dukascopy') },
     'with-saturdays': { type: 'boolean', default: false }, // spot FX never trades on a Saturday (UTC)
     ...clientOptions,
   },

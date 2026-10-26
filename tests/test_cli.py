@@ -38,7 +38,7 @@ def test_rebuild_then_check(tmp_path, capsys):
         assert len(exported) == len(pd.read_parquet(store.bars_path(dataset, "testfx", name)))
     manifest = json.loads((dataset / "manifest.json").read_text())
     assert manifest["convention"] == "utc" and manifest["symbols"]["testfx"]["daily_origin"]["original_before_minutes"] == 2
-    assert (workspace / "reports" / "data_quality_utc.md").read_text().startswith("# 行情数据重构报告")
+    assert (workspace / "reports" / "data_quality_utc.md").read_text(encoding="utf-8").startswith("# 行情数据重构报告")
     assert cli.main(["check", "--workspace", str(workspace)]) == 0
     assert "checks passed" in capsys.readouterr().out
 

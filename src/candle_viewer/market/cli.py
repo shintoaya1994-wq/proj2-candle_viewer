@@ -12,8 +12,7 @@ import pandas as pd
 from . import quality, rawdata, report, store, timeframes, verify
 from .rebuild import RebuildConfig, rebuild_symbol
 from .sessions import CONVENTIONS
-
-DEFAULT_WORKSPACE = Path.home() / "candle_workspace"
+from ..workspace import default_workspace
 
 
 def _rebuild(args: argparse.Namespace) -> int:
@@ -86,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
 
     rebuild = commands.add_parser("rebuild", help="rebuild all timeframes from 1-minute data")
     rebuild.add_argument("--source", required=True, help="directory with the raw CSV files")
-    rebuild.add_argument("--workspace", default=str(DEFAULT_WORKSPACE), help="private workspace directory (default: %(default)s)")
+    rebuild.add_argument("--workspace", default=str(default_workspace()), help="private workspace directory (default: %(default)s)")
     rebuild.add_argument("--convention", choices=CONVENTIONS, default="utc", help="how days and four-hour bars are aligned (default: %(default)s)")
     rebuild.add_argument("--symbols", nargs="*", help="symbols to rebuild (default: all found)")
     rebuild.add_argument("--patches", help="directory with 1-minute files that fill holes of the main files (default: <source>/patches)")
@@ -94,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     rebuild.set_defaults(run=_rebuild)
 
     check = commands.add_parser("check", help="verify a rebuilt dataset")
-    check.add_argument("--workspace", default=str(DEFAULT_WORKSPACE))
+    check.add_argument("--workspace", default=str(default_workspace()))
     check.add_argument("--convention", choices=CONVENTIONS, default="utc")
     check.add_argument("--verbose", action="store_true", help="list passed checks too")
     check.set_defaults(run=_check)

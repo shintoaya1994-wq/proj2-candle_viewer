@@ -8,14 +8,14 @@ from pathlib import Path
 
 import uvicorn
 
-from ..market.cli import DEFAULT_WORKSPACE
+from ..workspace import default_workspace
 from ..market.sessions import CONVENTIONS
 from .main import create_app
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="candle-viewer", description="Serve the candle viewer on this computer.")
-    parser.add_argument("--workspace", default=str(DEFAULT_WORKSPACE), help="private workspace directory (default: %(default)s)")
+    parser.add_argument("--workspace", default=str(default_workspace()), help="private workspace directory (default: %(default)s)")
     parser.add_argument("--convention", choices=CONVENTIONS, default="utc", help="dataset to show (default: %(default)s)")
     parser.add_argument("--host", default="127.0.0.1", help="address to listen on; 0.0.0.0 opens the viewer to the local network (default: %(default)s)")
     parser.add_argument("--port", type=int, default=8765)

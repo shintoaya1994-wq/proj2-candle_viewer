@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..app.projects import Projects
-from ..market.cli import DEFAULT_WORKSPACE
+from ..workspace import default_workspace
 from ..market.sessions import CONVENTIONS
 from . import runner, scripts
 
@@ -72,7 +72,7 @@ def _check(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="candle-screen", description="Run the screens that look for signals, and check them for looking ahead.")
-    parser.add_argument("--workspace", default=str(DEFAULT_WORKSPACE))
+    parser.add_argument("--workspace", default=str(default_workspace()))
     parser.add_argument("--convention", choices=CONVENTIONS, default="utc")
     parser.add_argument("--project", default="", help="project whose records to work on (default: the records at the root of the workspace)")
     commands = parser.add_subparsers(dest="command", required=True)
